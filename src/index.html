@@ -1,0 +1,34 @@
+
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+                <head>
+                    <meta charset="utf-8">
+                    <title>Mapbox</title>
+                    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.js'></script>
+                    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.css' rel='stylesheet' />
+                </head>
+                <body>
+                    <div class="horizon-split" id="horizon-0" style="width: 100vw; height: 50vh;">
+                        <div class="map-view" id="map-0" style="width: 33%; height: 100%"></div>
+                        <div class="map-view" id="map-1" style="width: 34%; height: 100%"></div>
+                        <div class="map-view" id="map-2" style="width: 33%; height: 100%"></div>
+                    </div>
+                    <div class="horizon-split" id="horizon-1" style="width: 100vw; height: 50vh;">
+                        <div class="map-view" id="map-3" style="width: 33%; height: 100%"></div>
+                        <div class="map-view" id="map-4" style="width: 34%; height: 100%"></div>
+                        <div class="map-view" id="map-5" style="width: 33%; height: 100%"></div>
+                    </div>
+                    <script src='js/view_0.js'></script>
+                    <script src='js/view_1.js'></script>
+                    <script src='js/view_2.js'></script>
+                    <script src='js/view_3.js'></script>
+                    <script src='js/view_4.js'></script>
+                    <script src='js/view_5.js'></script>
+                </body>
+                <style>
+                    body{ margin:0; padding:0; }
+                    .horizon-split{display: flex; flex-flow: row;}
+                    .map-view{display: block;}
+                </style>
+            </html>
+            
