@@ -1,21 +1,124 @@
 class Layer(object):
-    pass
+    def __init__(self, id, type, source='', maxzoom=24, minzoom=0):
+        self._id = id
+        self._type = type
+        self._source = source
+        self._script = ''
+        self._paint = ''
+        self._layout = ''
+
+    @property
+    def script(self):
+        return self._script
+
+    @def paint(self):
+        return self._paint
+
+    @property
+    def name(self):
+        return self._id
 
 
 class LineLayer(Layer):
+    def __init__(self, id, source,
+                 line_cap='butt',
+                 line_join='miter',
+                 line_miter_limit=2,
+                 line_round_limit=1.05,
+                 visibility='visible',
+                 line_opacity=1,
+                 line_color='#000000',
+                 line_translate=[0, 0],
+                 line_translate_anchor='map',
+                 line_width=1,
+                 line_gap_width=0,):
+        super().__init__()
+        pass
+
+
+class BackgroundLayer(Layer):
+    pass
+
+
+class FillLayer(Layer):
+    pass
+
+
+class SymbolLayer(Layer):
+    pass
+
+
+class RasterLayer(Layer):
+    pass
+
+
+class CircleLayer(Layer):
+    pass
+
+
+class HeatMapLayer(Layer):
+    pass
+
+
+class HillShadeLayer(Layer):
     pass
 
 
 class Source(object):
-    pass
+    def __init__(self, id, type, data=''):
+        self._data = data
+        self._id = id
+        self._script = ''
+        self._type = type
+
+    @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, value):
+        self._data = value
+
+    @property
+    def name(self):
+        return self._id
+
+    @property
+    def script(self):
+        return self._script
 
 
 class GeojsonSource(Source):
+    def __init__(self, id, data=''):
+        super().__init__(id, type='geojson', data=data)
+        self._script = '''
+        addSource('%s', {type: '%s', data: '%s'});  
+        ''' % (self._id, self._type, self._data)
+
+
+class VideoSource(Source):
+    pass
+
+
+class VectorSource(Source):
+    pass
+
+
+class RasterSource(Source):
+    pass
+
+
+class ImageSource(Source):
+    pass
+
+
+class CanvasSource(Source):
     pass
 
 
 class MapBox(object):
     def __init__(self, viewport, pk, style, title='MapBox', lon=116.37363, lat=39.915606, pitch=0, bearing=0, zoom=0):
+        self._name = title
         self._viewport = viewport
         self._style = style
         # self.style = 'mapbox://styles/hideinme/cjjo0icb95w172slnj93q6y31'
@@ -27,9 +130,6 @@ class MapBox(object):
         self._source = {}
         self._layer = {}
         self._viewport.name = title
-        self._map_on_load = '''
-        map.on('load', function(){})
-        '''
 
     @property
     def style(self):
@@ -45,7 +145,7 @@ class MapBox(object):
 
     @zoom.setter
     def zoom(self, value):
-        if 0 <= value <= 14:
+        if 0 <= value <= 24:
             self._style = value
 
     @property
@@ -79,7 +179,7 @@ class MapBox(object):
     def script(self):
         return '''
             mapboxgl.accessToken = '%s';
-            const map = new mapboxgl.Map({
+            const %s = new mapboxgl.Map({
                 container: 'map',
                 style: '%s',
                 center: [%f, %f],
@@ -87,7 +187,7 @@ class MapBox(object):
                 zoom: %f,
                 bearing: %f
             });
-            ''' % (self._pk, self._style, self._center[0], self._center[1], self._pitch, self._zoom, self._bearing)
+            ''' % (self._name, self._pk, self._style, self._center[0], self._center[1], self._pitch, self._zoom, self._bearing)
 
     def load(self):
         '''
@@ -105,16 +205,6 @@ class MapBox(object):
         with open(self.src_dir + self.index_js, 'a') as f:
             f.write(load_code)
             f.close()
-
-    def add_layer(self, name, source=None, type='background', paint={}):
-        if name in self.layer.keys():
-            print('Name existed!')
-            return
-        self.layer[name] = {
-            'source': source,
-            'type': type,
-            'paint': paint
-        }
 
     @staticmethod
     def transform_layer(name, layer):
@@ -139,35 +229,26 @@ class MapBox(object):
             
         ''' % (name, source)
 
-    def add_geojson_source(self, geojson, name):
+    def add_source(self, source):
         '''
         add geojson source for map
-        :param geojson: dir of geojson file
-        :param name: source name
+        :param source:
         :return:
         '''
-        if name in self.source.keys():
+        if source.name in self._source.keys():
             print('Name existed!')
             return
-        self.source[name] = geojson
+        self._source[source.name] = source
 
-    def add_video_source(self):
-        pass
-
-    def add_image_source(self):
-        pass
-
-    def add_canvas_source(self):
-        pass
-
-    def set_data(self, data, name):
-        '''
-        set data for source by id
-        :param geojson: dir of geojson file
-        :param name: source name
-        :return:
-        '''
-        self.source[name] = data
+    def add_layer(self, name, source=None, type='background', paint={}):
+        if name in self.layer.keys():
+            print('Name existed!')
+            return
+        self.layer[name] = {
+            'source': source,
+            'type': type,
+            'paint': paint
+        }
 
     def show(self):
         '''
