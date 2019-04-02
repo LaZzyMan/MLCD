@@ -5,12 +5,12 @@ from shapely.geometry import LineString
 import matplotlib.pyplot as plt
 from MapBox import MapBox
 
-NETWORK_LIST = ['20121101',
-                '20130501',
-                '20140301',
-                '20150501',
-                '20160501',
-                '20170501']
+NETWORK_LIST = ['2012',
+                '2013',
+                '2014',
+                '2015',
+                '2016',
+                '2017']
 
 
 class GeoMultiGraph:
@@ -18,22 +18,22 @@ class GeoMultiGraph:
         self.geo_mapping = geo_mapping
         self.graph = graph
         self.nx_graph = None
-        self.mb=None
+        self.mb = None
         if graph is None:
             self.num_nodes = 0
         else:
             self.num_nodes = len(graph[0])
 
     def save(self, file_name):
-        self.geo_mapping.to_file('src/' + file_name + '.geojson', driver='GeoJSON')
-        np.save('src/' + file_name + '.npy', self.graph)
+        self.geo_mapping.to_file('src/data/' + file_name + '.geojson', driver='GeoJSON')
+        np.save('src/data/' + file_name + '.npy', self.graph)
 
     def load(self, file_name):
-        self.graph = np.load('src/' + file_name + '.npy')
-        self.geo_mapping = gpd.read_file('src/' + file_name + '.geojson')
+        self.graph = np.load('src/data/' + file_name + '.npy')
+        self.geo_mapping = gpd.read_file('src/data/' + file_name + '.geojson')
         self.num_nodes = len(self.graph[0])
 
-    def to_nx_graph(self, t_weight=1):
+    def to_nx_graph(self, min_weight=1, max_weight=10000000):
         G = []
         for l, time in zip(self.graph, NETWORK_LIST):
             print('Generating Network %s' % time)
@@ -42,8 +42,13 @@ class GeoMultiGraph:
                 g.add_node(i, tazid=self.geo_mapping['tazid'][i])
             for i in range(len(l)):
                 for j in range(len(l)):
-                    if not l[i, j] <= t_weight:
-                        g.add_edge(i, j, weight=l[i, j])
+                    if i == j:
+                        continue
+                    if min_weight <= l[i, j]:
+                        if l[i, j] > max_weight:
+                            g.add_edge(i, j, weight=max_weight)
+                        else:
+                            g.add_edge(i, j, weight=l[i, j])
             G.append(g)
             self.nx_graph = G
         return G
@@ -139,6 +144,7 @@ class GeoMultiGraph:
         connect_df = gpd.GeoDataFrame.from_dict(connect_table)
         min_weight = connect_df['weight'].min()
         max_weight = connect_df['weight'].max()
+        connect_df['weight'].to_csv('connect_2012.csv')
         connect_df['opacity'] = connect_df['weight'].map(lambda x: (x-min_weight)/(max_weight-min_weight)*0.8+0.00)
         draw_df = connect_df[['geometry', 'opacity']]
         draw_df.to_file('src/network_%d.geojson' % index, driver='GeoJSON')

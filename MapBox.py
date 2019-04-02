@@ -1,44 +1,83 @@
-import webbrowser
+class Layer(object):
+    pass
 
 
-class MapBox:
-    def __init__(self, pk, style, title='MapBox', lon=116.37363, lat=39.915606, pitch=0, bearing=0, zoom=0):
-        self.src_dir = 'src/'
-        self.index_html = 'index.html'
-        self.index_js = 'js/index.js'
-        self.style = style
+class LineLayer(Layer):
+    pass
+
+
+class Source(object):
+    pass
+
+
+class GeojsonSource(Source):
+    pass
+
+
+class MapBox(object):
+    def __init__(self, viewport, pk, style, title='MapBox', lon=116.37363, lat=39.915606, pitch=0, bearing=0, zoom=0):
+        self._viewport = viewport
+        self._style = style
         # self.style = 'mapbox://styles/hideinme/cjjo0icb95w172slnj93q6y31'
-        self.pk = pk
-        self.center = [lon, lat]
-        self.bearing = bearing
-        self.pitch = pitch
-        self.zoom = zoom
-        self.source = {}
-        self.layer = {}
-        self.map_on_load = '''
+        self._pk = pk
+        self._center = [lon, lat]
+        self._bearing = bearing
+        self._pitch = pitch
+        self._zoom = zoom
+        self._source = {}
+        self._layer = {}
+        self._viewport.name = title
+        self._map_on_load = '''
         map.on('load', function(){})
         '''
-        with open(self.src_dir + self.index_html, 'w') as f:
-            html = '''
-            <!DOCTYPE html>
-            <html lang="zh-CN">
-                <head>
-                    <meta charset="utf-8">
-                    <title>%s</title>
-                    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.js'></script>
-                    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.css' rel='stylesheet' />
-                </head>
-                <body>
-                    <div id="map" style="width: 100vw; height: 100vh"></div>
-                    <script src='%s'></script>
-                </body>
-                <style>body{ margin:0; padding:0; }</style>
-            </html>
-            ''' % (title, self.index_js)
-            f.write(html)
-            f.close()
-        with open(self.src_dir + self.index_js, 'w') as f:
-            js = '''
+
+    @property
+    def style(self):
+        return self._style
+
+    @style.setter
+    def style(self, value):
+        self._style = value
+
+    @property
+    def zoom(self):
+        return self._zoom
+
+    @zoom.setter
+    def zoom(self, value):
+        if 0 <= value <= 14:
+            self._style = value
+
+    @property
+    def bearing(self):
+        return self._bearing
+
+    @bearing.setter
+    def bearing(self, value):
+        if 0 <= value <= 180:
+            self._bearing = value
+
+    @property
+    def pitch(self):
+        return self._pitch
+
+    @pitch.setter
+    def pitch(self, value):
+        self._pitch = value
+
+    @property
+    def center(self):
+        return self._pitch
+
+    @center.setter
+    def center(self, value):
+        lon = value[0]
+        lat = value[1]
+        self._center = [lon, lat]
+
+    @property
+    def script(self):
+        return '''
             mapboxgl.accessToken = '%s';
             const map = new mapboxgl.Map({
                 container: 'map',
@@ -48,9 +87,7 @@ class MapBox:
                 zoom: %f,
                 bearing: %f
             });
-            ''' % (self.pk, self.style, self.center[0], self.center[1], self.pitch, self.zoom, self.bearing)
-            f.write(js)
-            f.close()
+            ''' % (self._pk, self._style, self._center[0], self._center[1], self._pitch, self._zoom, self._bearing)
 
     def load(self):
         '''
