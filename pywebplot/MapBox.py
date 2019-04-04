@@ -1,5 +1,5 @@
 import json
-from PlotView import PlotView
+from pywebplot.PlotView import PlotView
 
 
 class Layer(object):
@@ -337,7 +337,7 @@ class MapBox(object):
 
 
 if __name__ == '__main__':
-    plt = PlotView(column_num=1, row_num=1, title='MapBox')
+    plt = PlotView(column_num=2, row_num=2, title='MapBox')
     plt[0, 0].name = 'network'
     mb = MapBox(name='map',
                 pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',

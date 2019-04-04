@@ -1,4 +1,4 @@
-class SubView:
+class SubView(object):
     def __init__(self, width, height, plv, name=''):
         '''
         create a subview
@@ -14,8 +14,8 @@ class SubView:
     @property
     def dom(self):
         return '''
-        <div class="sub-view" id="%s" style="width: %f%%; height: %f%%"/>
-        ''' % (self._name, self._width, self._height)
+        <div class="sub-view" id="%s" style="width: 100%%; height: %f%%"></div>
+        ''' % (self._name, self._height)
 
     @property
     def name(self):

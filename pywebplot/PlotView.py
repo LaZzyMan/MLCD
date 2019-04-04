@@ -1,4 +1,4 @@
-from SubView import SubView
+from pywebplot.SubView import SubView
 import webbrowser
 import os
 
@@ -17,8 +17,8 @@ class PlotView(object):
         height_subview = 100.0 / self._row_num
         self._subview = [SubView(width=width_subview, height=height_subview, name='subview-%d' % i, plv=self)
                          for i in range(self._column_num * self._row_num)]
-        self._dir_html = 'src/%s.html' % title.lower().replace(' ', '_')
-        self._dir_js = 'src/js/%s.js' % title.lower().replace(' ', '_')
+        self._dir_html = '../src/%s.html' % title.lower().replace(' ', '_')
+        self._dir_js = '../src/js/%s.js' % title.lower().replace(' ', '_')
         if os.path.exists(self._dir_html):
             os.remove(self._dir_html)
         if os.path.exists(self._dir_js):
@@ -72,7 +72,7 @@ class PlotView(object):
                 <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.css' rel='stylesheet' />
             </head>
             <body>
-                %s
+                <div class="plot-view">%s</div>
                 <script src='js/%s.js'></script>
                 <link href='style/index.css' rel='stylesheet' />
             </body>
@@ -82,4 +82,4 @@ class PlotView(object):
         with open(self._dir_html, 'w') as f:
             f.write(html)
             f.close()
-        webbrowser.open('src/index.html')
+        webbrowser.open(self._dir_html)

@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/MLCD.iml" filepath="$PROJECT_DIR$/.idea/MLCD.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../pywebplot/.idea/pywebplot.iml" filepath="$PROJECT_DIR$/../pywebplot/.idea/pywebplot.iml" />
     </modules>
   </component>
 </project>

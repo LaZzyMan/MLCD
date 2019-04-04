@@ -2,3 +2,4 @@ body{ margin:0; padding:0; }
 .horizon-split{display: flex; flex-flow: row;}
 .vertical-split{display: flex; flex-flow: column;}
 .sub-view{display: block;}
+.plot-view{display: flex; flex-flow: row; width: 100vw; height: 100vh;}

@@ -3,7 +3,7 @@ import geopandas as gpd
 import networkx as nx
 from shapely.geometry import LineString
 import matplotlib.pyplot as plt
-from MapBox import MapBox
+from pywebplot.MapBox import MapBox
 
 NETWORK_LIST = ['2012',
                 '2013',
