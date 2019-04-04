@@ -1,6 +1,7 @@
 ## Example
 Use following code to create a map with layers.
-`
+```python
+from pywebplot import *
 # create a view with 1*1 sub views
 plt = PlotView(column_num=1, row_num=1, title='MapBox')
 plt[0, 0].name = 'network'
@@ -39,7 +40,7 @@ mb.add_layer(taz_layer)
 mb.add_layer(network_layer)
 # show in web browser
 mb.update()
-plt.plot()   
-`
+plt.plot() 
+```
 Result:
-![Result](https://github.com/LaZzyMan/pywebplot/example.png)
+![Result](https://github.com/LaZzyMan/pywebplot/blob/master/example.png)
