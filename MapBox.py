@@ -1,18 +1,42 @@
+import json
+from PlotView import PlotView
+
+
 class Layer(object):
-    def __init__(self, id, type, source='', maxzoom=24, minzoom=0):
+    def __init__(self, id, type, source='', maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a layer
+        :param id:
+        :param type:
+        :param source:
+        :param maxzoom:
+        :param minzoom:
+        :param kwargs: paint and layout params use '_' instead of '-'. Start with p_ for paints l_ for layouts.
+        '''
         self._id = id
         self._type = type
         self._source = source
-        self._script = ''
-        self._paint = ''
-        self._layout = ''
+        self._paint = {}
+        self._layout = {}
+        self._maxzoom = maxzoom
+        self._minzoom = minzoom
+        for key, item in kwargs.items():
+            if key[:2] == 'p_':
+                self._paint[key[2:].replace('_', '-')] = item
+            if key[:2] == 'l_':
+                self._layout[key[2:].replace('_', '-')] = item
 
     @property
     def script(self):
-        return self._script
+        return '(%s);' % json.dumps(self.__dict__).replace('_', '')
 
-    @def paint(self):
+    @property
+    def paint(self):
         return self._paint
+
+    @property
+    def layout(self):
+        return self._layout
 
     @property
     def name(self):
@@ -20,48 +44,91 @@ class Layer(object):
 
 
 class LineLayer(Layer):
-    def __init__(self, id, source,
-                 line_cap='butt',
-                 line_join='miter',
-                 line_miter_limit=2,
-                 line_round_limit=1.05,
-                 visibility='visible',
-                 line_opacity=1,
-                 line_color='#000000',
-                 line_translate=[0, 0],
-                 line_translate_anchor='map',
-                 line_width=1,
-                 line_gap_width=0,):
-        super().__init__()
-        pass
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, 'line', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class BackgroundLayer(Layer):
-    pass
+    def __init__(self, id, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, type='background', maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class FillLayer(Layer):
-    pass
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, 'fill', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class SymbolLayer(Layer):
-    pass
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, 'symbol', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class RasterLayer(Layer):
-    pass
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, 'raster', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class CircleLayer(Layer):
-    pass
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, 'circle', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class HeatMapLayer(Layer):
-    pass
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, 'heatmap', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class HillShadeLayer(Layer):
-    pass
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        create a line layer
+        :param id:
+        :param source:
+        :param kwargs: paint params
+        '''
+        super().__init__(id, 'hillshade', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class Source(object):
@@ -91,9 +158,7 @@ class Source(object):
 class GeojsonSource(Source):
     def __init__(self, id, data=''):
         super().__init__(id, type='geojson', data=data)
-        self._script = '''
-        addSource('%s', {type: '%s', data: '%s'});  
-        ''' % (self._id, self._type, self._data)
+        self._script = "('%s', {type: '%s', data: '%s'});" % (self._id, self._type, self._data)
 
 
 class VideoSource(Source):
@@ -116,12 +181,33 @@ class CanvasSource(Source):
     pass
 
 
+class Event(object):
+    def __init__(self, type, event, listener, layer=None):
+        '''
+
+        :param type: on, off or once
+        :param event: event type
+        :param layer: specific layer of the map
+        :param listener: function object
+        '''
+        self._type = type
+        self._event = event
+        self._listener = listener
+        self._layer = layer
+
+    @property
+    def script(self):
+        if self._layer is None:
+            return "%s('%s', %s)" % (self._type, self._event, self._listener)
+        else:
+            return "%s('%s', '%s', %s)" % (self._type, self._event, self._layer, self._listener)
+
+
 class MapBox(object):
-    def __init__(self, viewport, pk, style, title='MapBox', lon=116.37363, lat=39.915606, pitch=0, bearing=0, zoom=0):
-        self._name = title
+    def __init__(self, viewport, pk, style, name='map', lon=116.37363, lat=39.915606, pitch=0, bearing=0, zoom=0):
+        self._name = name
         self._viewport = viewport
         self._style = style
-        # self.style = 'mapbox://styles/hideinme/cjjo0icb95w172slnj93q6y31'
         self._pk = pk
         self._center = [lon, lat]
         self._bearing = bearing
@@ -129,7 +215,8 @@ class MapBox(object):
         self._zoom = zoom
         self._source = {}
         self._layer = {}
-        self._viewport.name = title
+        self._event = []
+        self._dir_js = self._viewport.plv.dir_js
 
     @property
     def style(self):
@@ -175,63 +262,47 @@ class MapBox(object):
         lat = value[1]
         self._center = [lon, lat]
 
+    @staticmethod
+    def js_function(content, **kwargs):
+        param_script = ''
+        for key, item in kwargs:
+            if isinstance(item, str):
+                param_script += "%s='%s', " % (key, item)
+            else:
+                param_script += "%s=%s, " % (key, item)
+        return 'function (%s){%s}' % (param_script, content)
+
+    @property
+    def load(self):
+        source_script = ''
+        layer_script = ''
+        for _, item in self._source.items():
+            source_script += '%s.addSource%s\n' % (self._name, item.script)
+        for _, item in self._layer.items():
+            layer_script += '%s.addLayer%s\n' % (self._name, item.script)
+        return Event(type='on', event='load', listener=self.js_function(content=source_script+layer_script))
+
     @property
     def script(self):
-        return '''
+        init_script = '''
             mapboxgl.accessToken = '%s';
             const %s = new mapboxgl.Map({
-                container: 'map',
+                container: '%s',
                 style: '%s',
                 center: [%f, %f],
                 pitch: %f,
                 zoom: %f,
                 bearing: %f
             });
-            ''' % (self._name, self._pk, self._style, self._center[0], self._center[1], self._pitch, self._zoom, self._bearing)
-
-    def load(self):
-        '''
-        add listener for map on load
-        :return:
-        '''
-        load_code = '''
-        map.on('load', function(){\n
-        '''
-        for source_id, source in self.source.items():
-            load_code += self.transform_source(source_id, source)
-        for layer_id, layer in self.layer.items():
-            load_code += self.transform_layer(layer_id, layer)
-        load_code += '});'
-        with open(self.src_dir + self.index_js, 'a') as f:
-            f.write(load_code)
-            f.close()
-
-    @staticmethod
-    def transform_layer(name, layer):
-        return '''
-        map.addLayer(
-            {
-                'source': '%s',
-                'type': '%s',
-                'paint': %s,
-                'id': '%s'
-            }
-        )
-        ''' % (layer['source'], layer['type'], str(layer['paint']), name)
-
-    @staticmethod
-    def transform_source(name, source):
-        return '''
-        map.addSource('%s', {
-            type: 'geojson',
-            data: '%s'
-            });
-            
-        ''' % (name, source)
+            ''' % (self._pk, self._name, self._viewport.name, self._style, self._center[0], self._center[1], self._pitch, self._zoom, self._bearing)
+        init_script += '%s.%s' % (self._name, self.load.script)
+        for event in self._event:
+            init_script += '%s.%s' % (self._name, event.script)
+        return init_script
 
     def add_source(self, source):
         '''
-        add geojson source for map
+        add source for map
         :param source:
         :return:
         '''
@@ -240,35 +311,61 @@ class MapBox(object):
             return
         self._source[source.name] = source
 
-    def add_layer(self, name, source=None, type='background', paint={}):
-        if name in self.layer.keys():
-            print('Name existed!')
-            return
-        self.layer[name] = {
-            'source': source,
-            'type': type,
-            'paint': paint
-        }
-
-    def show(self):
+    def add_layer(self, layer):
         '''
-        open web page
+        add layer for map
+        :param layer:
         :return:
         '''
-        self.load()
-        webbrowser.open(self.src_dir + self.index_html)
+        if layer.name in self._layer.keys():
+            print('Name existed!')
+            return
+        self._layer[layer.name] = layer
+
+    def add_event(self, event):
+        '''
+        add event for map
+        :param event:
+        :return:
+        '''
+        self._event.append(event)
+
+    def update(self):
+        with open(self._dir_js, 'a') as f:
+            f.write(self.script)
+            f.close()
 
 
 if __name__ == '__main__':
-    mb = MapBox(title='Network',
+    plt = PlotView(column_num=1, row_num=1, title='MapBox')
+    plt[0, 0].name = 'network'
+    mb = MapBox(name='map',
                 pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
                 lon=116.37363,
                 lat=39.915606,
                 style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
                 pitch=55,
                 bearing=0,
-                zoom=12)
-    mb.add_geojson_source(geojson='network_0.geojson', name='network_0')
-    mb.add_layer(name='network_0', source='network_0', type='line',
-                 paint={'line-color': 'white', 'line-width': 0.3, 'line-opacity': ['get', 'opacity']})
-    mb.show()
+                zoom=12,
+                viewport=plt[0, 0])
+    network_source = GeojsonSource(id='network', data='data/network_0.geojson')
+    taz_source = GeojsonSource(id='taz', data='data/taz.geojson')
+    mb.add_source(network_source)
+    mb.add_source(taz_source)
+    bk_layer = BackgroundLayer(id='bk',
+                               p_background_opacity=0.7,
+                               p_background_color='#000000')
+    taz_layer = FillLayer(id='taz',
+                          source='taz',
+                          p_fill_color='#3BA1C3',
+                          p_fill_opacity=0.1)
+    network_layer = LineLayer(id='network',
+                              source='network',
+                              p_line_color='white',
+                              p_line_width=1.0,
+                              p_line_opacity=['get', 'opacity'])
+    mb.add_layer(bk_layer)
+    mb.add_layer(taz_layer)
+    mb.add_layer(network_layer)
+    mb.update()
+    plt.plot()

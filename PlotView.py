@@ -1,9 +1,10 @@
 from SubView import SubView
 import webbrowser
+import os
 
 
 class PlotView(object):
-    def __init__(self, column_num=1, row_num=1, title='Plot View'):
+    def __init__(self, column_num=1, row_num=1, title='index'):
         '''
         create a plot view(html page)
         :param column_num: subview number per column
@@ -14,7 +15,14 @@ class PlotView(object):
         self._row_num = row_num
         width_subview = 100.0 / self._column_num
         height_subview = 100.0 / self._row_num
-        self._subview = [SubView(width=width_subview, height=height_subview) for _ in range(self._column_num * self._row_num)]
+        self._subview = [SubView(width=width_subview, height=height_subview, name='subview-%d' % i, plv=self)
+                         for i in range(self._column_num * self._row_num)]
+        self._dir_html = 'src/%s.html' % title.lower().replace(' ', '_')
+        self._dir_js = 'src/js/%s.js' % title.lower().replace(' ', '_')
+        if os.path.exists(self._dir_html):
+            os.remove(self._dir_html)
+        if os.path.exists(self._dir_js):
+            os.remove(self._dir_js)
 
     def __getitem__(self, index):
         '''
@@ -31,7 +39,7 @@ class PlotView(object):
     def dom(self):
         s = ''
         for i in range(self._column_num):
-            s += '<div class="vertical-split" style="width: %f%%; height: 100%%">' % (100.0 / self._column_num)
+            s += '<div class="vertical-split" style="width: %fvw; height: 100vh">' % (100.0 / self._column_num)
             for j in range(self._row_num):
                 s += self[i, j].dom
             s += '</div>'
@@ -40,6 +48,14 @@ class PlotView(object):
     @property
     def title(self):
         return self._title
+
+    @property
+    def dir_js(self):
+        return self._dir_js
+
+    @property
+    def dir_html(self):
+        return self._dir_html
 
     @title.setter
     def title(self, value):
@@ -57,13 +73,13 @@ class PlotView(object):
             </head>
             <body>
                 %s
-                <script src='js/index.js'></script>
+                <script src='js/%s.js'></script>
                 <link href='style/index.css' rel='stylesheet' />
             </body>
             <style>body{ margin:0; padding:0; }</style>
         </html>
-        ''' % (self._title, self.dom)
-        with open('src/index.html', 'w') as f:
+        ''' % (self._title, self.dom, self.title.lower().replace(' ', '_'))
+        with open(self._dir_html, 'w') as f:
             f.write(html)
             f.close()
         webbrowser.open('src/index.html')
