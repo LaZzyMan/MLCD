@@ -89,6 +89,7 @@ class GeoMultiGraph:
                              'to_taziid': [],
                              'weight': [],
                              'geometry': []}
+
             for i in range(self.num_nodes):
                 for j in range(i + 1, self.num_nodes):
                     try:
