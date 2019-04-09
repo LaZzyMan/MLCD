@@ -3,7 +3,8 @@ import geopandas as gpd
 import networkx as nx
 from shapely.geometry import LineString
 import matplotlib.pyplot as plt
-from pywebplot.MapBox import MapBox
+from pywebplot import *
+from palettable.colorbrewer.diverging import Spectral_10
 
 NETWORK_LIST = ['2012',
                 '2013',
@@ -18,7 +19,6 @@ class GeoMultiGraph:
         self.geo_mapping = geo_mapping
         self.graph = graph
         self.nx_graph = None
-        self.mb = None
         if graph is None:
             self.num_nodes = 0
         else:
@@ -34,6 +34,11 @@ class GeoMultiGraph:
         self.num_nodes = len(self.graph[0])
 
     def to_nx_graph(self, min_weight=1, max_weight=10000000):
+        '''
+        :param min_weight:
+        :param max_weight:
+        :return:
+        '''
         G = []
         for l, time in zip(self.graph, NETWORK_LIST):
             print('Generating Network %s' % time)
@@ -53,12 +58,16 @@ class GeoMultiGraph:
             self.nx_graph = G
         return G
 
-    def draw_map_community(self, community=None, title='Community.png'):
+    def draw_community(self, map_view, community=None, title='community', cmap=Spectral_10):
         community_geo_map = self.geo_mapping.merge(community, on='tazid')
-        filtered_community = community_geo_map[community_geo_map['size'] >= 5]
-        filtered_community.plot(column='community', cmap='Dark2')
-        plt.savefig(title)
-        plt.show()
+        community_geo_map = community_geo_map[['tazid', 'community', 'geometry']]
+        community_geo_map = community_geo_map[community_geo_map['size'] >= 5]
+        community_geo_map.to_file('src/data/%s.geojson' % title, driver='GeoJSON')
+        source = GeojsonSource(id=title, data='data/%s.geojson')
+        map_view.addSource(source)
+        layer = FillLayer(id=title, source=title, p_fill_opacity=0.7, p_fill_color=['get', ])
+        map_view.addSource(layer)
+        map_view.update()
 
     def draw_map_centrality(self, community=None):
         community_geo_map = self.geo_mapping.merge(community, on='tazid')
@@ -66,7 +75,7 @@ class GeoMultiGraph:
         plt.savefig('hot_centrality.png')
         plt.show()
 
-    def draw_map(self, value_name, cmap, data):
+    def draw_map(self, value_name, data, cmap=Spectral_10.mpl_colormap):
         community_geo_map = self.geo_mapping.merge(data, on='tazid')
         community_geo_map.plot(column=value_name, cmap=cmap)
         plt.savefig('%s_%s.png' % (value_name, cmap))

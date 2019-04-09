@@ -1,6 +1,7 @@
 from pywebplot.SubView import SubView
 import webbrowser
 import os
+from jinja2 import Template
 
 
 class PlotView(object):
@@ -19,6 +20,8 @@ class PlotView(object):
                          for i in range(self._column_num * self._row_num)]
         self._dir_html = '../src/%s.html' % title.lower().replace(' ', '_')
         self._dir_js = '../src/js/%s.js' % title.lower().replace(' ', '_')
+        self._js = ["<script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.js'></script>",
+                    '<script src="https://d3js.org/d3.v5.min.js"></script>']
         if os.path.exists(self._dir_html):
             os.remove(self._dir_html)
         if os.path.exists(self._dir_js):
@@ -61,25 +64,30 @@ class PlotView(object):
     def title(self, value):
         self._title = value
 
+    def add_js(self, url):
+        self._js.append('<script src="%s"></script>' % url)
+
     def plot(self):
         html = '''
         <!DOCTYPE html>
         <html lang="zh-CN">
             <head>
                 <meta charset="utf-8">
-                <title>%s</title>
-                <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.js'></script>
+                <title>{{ title }}</title>
+                {% for link in js %}
+                {{ link }}
+                {% endfor %}
                 <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.css' rel='stylesheet' />
             </head>
             <body>
-                <div class="plot-view">%s</div>
-                <script src='js/%s.js'></script>
+                <div class="plot-view">{{ dom }}</div>
                 <link href='style/index.css' rel='stylesheet' />
             </body>
             <style>body{ margin:0; padding:0; }</style>
         </html>
-        ''' % (self._title, self.dom, self.title.lower().replace(' ', '_'))
+        '''
+        template = Template(html)
         with open(self._dir_html, 'w') as f:
-            f.write(html)
+            f.write(template.render(title=self._title, js=self._js, dom=self.dom))
             f.close()
         webbrowser.open(self._dir_html)
