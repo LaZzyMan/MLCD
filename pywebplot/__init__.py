@@ -1,5 +1,4 @@
-from pywebplot.PlotView import PlotView
-from pywebplot.SubView import SubView
+from pywebplot.PlotView import *
 from pywebplot.MapBox import *
 from pywebplot.CMap import *
 from pywebplot.utils import *

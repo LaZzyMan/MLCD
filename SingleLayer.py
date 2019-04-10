@@ -39,8 +39,8 @@ if __name__ == '__main__':
     # for i in range(len(G)):
     #     gmg.mapbox_draw_single_network(width=0.7, index=i)
     # gmg.mapbox_show()
-    # in_degree = pd.DataFrame.from_dict({'tazid': [G[0].nodes[i]['tazid'] for i in range(1371)],
-    #                                     'in_degree': [G[0].in_degree(i, weight='weight') for i in range(1371)]})
+    in_degree = pd.DataFrame.from_dict({'tazid': [G[0].nodes[i]['tazid'] for i in range(1371)],
+                                        'in_degree': [G[0].in_degree(i, weight='weight') for i in range(1371)]})
     # gmg.draw_map(value_name='in_degree', cmap='summer', data=in_degree)
     # out_degree = pd.DataFrame.from_dict({'tazid': [G[0].nodes[i]['tazid'] for i in range(1371)],
     #                                     'out_degree': [G[0].out_degree(i, weight='weight') for i in range(1371)]})

@@ -1,4 +1,4 @@
-from pywebplot.SubView import SubView
+from pywebplot import *
 import webbrowser
 import os
 from jinja2 import Template
@@ -91,3 +91,36 @@ class PlotView(object):
             f.write(template.render(title=self._title, js=self._js, dom=self.dom))
             f.close()
         webbrowser.open(self._dir_html)
+
+
+class SubView(object):
+    def __init__(self, width, height, plv, name=''):
+        '''
+        create a subview
+        :param width: width relate to father dom
+        :param height: height relate to father dom
+        :param name: identifier for subview
+        '''
+        self._width = width
+        self._height = height
+        self._name = name
+        self._plv = plv
+
+    @property
+    def dom(self):
+        return '''
+        <div class="sub-view" id="%s" style="width: 100%%; height: %f%%"></div>
+        ''' % (self._name, self._height)
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def plv(self):
+        return self._plv
+
+    @name.setter
+    def name(self, value):
+        if isinstance(value, str):
+            self._name = value

@@ -1,5 +1,5 @@
 import json
-from pywebplot.PlotView import PlotView
+from pywebplot import *
 
 
 class Layer(object):

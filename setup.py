@@ -15,7 +15,7 @@ Docs for d3.js: https://d3js.org/
 if os.environ.get('READTHEDOCS', False) == 'True':
     INSTALL_REQUIRES = []
 else:
-    INSTALL_REQUIRES = ['webbrowser', 'geopandas', 'shapely', 'numpy']
+    INSTALL_REQUIRES = ['webbrowser', 'geopandas', 'shapely', 'numpy', 'pandas', 'python-louvain, networkx']
 
 setup(name='pywebplot',
       description='Web plot for python.',
