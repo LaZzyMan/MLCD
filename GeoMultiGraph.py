@@ -131,6 +131,7 @@ class GeoMultiGraph:
         }
         df_partiton = []
         for g in self.nx_graph:
+            print('Louvain for network %s...' % g.graph['date'])
             g = nx.Graph(g)
             p = best_partition(g, weight='weight', resolution=resolution)
             print('Network %s Modularity: %f.' % (g.graph['date'], modularity(p, g, weight='weight')))
@@ -140,6 +141,7 @@ class GeoMultiGraph:
             df_partiton.append(pd.DataFrame.from_dict(table))
             table['tazid'].clear()
             table['community'].clear()
+        print('Finished.')
         return df_partiton
 
     @property
@@ -148,6 +150,7 @@ class GeoMultiGraph:
                  'closeness_centrality': []}
         closeness_centrality = []
         for g in self.nx_graph:
+            print('Closeness Centrality for %s...' % g.graph['date'])
             cc = nx.closeness_centrality(g)
             for k, i in cc.items():
                 table['tazid'].append(g.nodes[k]['tazid'])
@@ -155,6 +158,7 @@ class GeoMultiGraph:
             closeness_centrality.append(pd.DataFrame.from_dict(table))
             table['tazid'].clear()
             table['closeness_centrality'].clear()
+        print('Finished.')
         return closeness_centrality
 
     @property
@@ -163,12 +167,14 @@ class GeoMultiGraph:
                  'in_degree': []}
         degree = []
         for g in self.nx_graph:
+            print('Degree for %s...' % g.graph['date'])
             for k in range(self.num_nodes):
                 table['tazid'].append(g.nodes[k]['tazid'])
                 table['degree'].append(g.degree(k, weight='weight'))
             degree.append(pd.DataFrame.from_dict(table))
             table['tazid'].clear()
             table['degree'].clear()
+        print('Finished.')
         return degree
 
     @property
@@ -177,12 +183,14 @@ class GeoMultiGraph:
                  'in_degree': []}
         in_degree = []
         for g in self.nx_graph:
+            print('In Degree for %s...' % g.graph['date'])
             for k in range(self.num_nodes):
                 table['tazid'].append(g.nodes[k]['tazid'])
                 table['in_degree'].append(g.in_degree(k, weight='weight'))
             in_degree.append(pd.DataFrame.from_dict(table))
             table['tazid'].clear()
             table['in_degree'].clear()
+        print('Finished.')
         return in_degree
 
     @property
@@ -191,18 +199,20 @@ class GeoMultiGraph:
                 'out_degree': []}
         out_degree = []
         for g in self.nx_graph:
+            print('Out Degree for %s...' % g.graph['date'])
             for k in range(self.num_nodes):
                 table['tazid'].append(g.nodes[k]['tazid'])
                 table['out_degree'].append(g.out_degree(k, weight='weight'))
             out_degree.append(pd.DataFrame.from_dict(table))
             table['tazid'].clear()
             table['out_degree'].clear()
+        print('Finished.')
         return out_degree
 
-    def draw_dist(self, kde=True, rug=True):
+    def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
         sns.set_style('ticks')
         graphs = sns.FacetGrid(self.edges, col='network')
-        graphs.map(plt.hist, 'weight')
+        graphs.map(sns.distplot, 'weight', hist=hist, kde=kde, rug=rug, bins=bins)
 
     def draw_multi_scale_community(self, map_view, community, title='community', cmap=Spectral_10):
         community = community[0]
@@ -288,7 +298,7 @@ class GeoMultiGraph:
                         continue
                     g.add_edge(i, j, weight=l[i, j])
             G.append(g)
-        return G
+        self._nx_graph = G
 
 
 if __name__ == '__main__':
