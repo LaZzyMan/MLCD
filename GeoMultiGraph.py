@@ -33,12 +33,13 @@ class GeoMultiGraph:
         self._geo_mapping.to_file('src/data/' + file_name + '.geojson', driver='GeoJSON')
         np.save('src/data/' + file_name + '.npy', self._graph)
 
-    def load(self, file_name):
+    def load(self, file_name, generate_nx=False):
         self._graph = np.load('src/data/' + file_name + '.npy')
         self._geo_mapping = gpd.read_file('src/data/' + file_name + '.geojson')
         self._num_nodes = len(self._graph[0])
         self._num_graph = len(self._graph)
-        self.__update_nx_graph()
+        if generate_nx:
+            self.__update_nx_graph()
 
     @property
     def nx_graph(self):
@@ -105,24 +106,23 @@ class GeoMultiGraph:
             connect_df = gpd.GeoDataFrame.from_dict(connect_table)
             return connect_df
 
-    def threshold(self, t_min=0, t_max=1000000):
+    def threshold(self, t_min=0, t_max=1000000, generate_nx=False):
         '''
         weight bigger than y_max will be set to t_max, lower than t_min will be set to 0.
         :param t_min:
         :param t_max:
         :return:
         '''
-        def process(x, low, up):
-            if x < low:
+        def process(x):
+            if x < t_min:
                 return 0
-            if x > up:
-                return up
+            if x > t_max:
+                return t_max
             return x
 
-        expand = self._graph.reshape((self.num_nodes * self.num_nodes * self.num_graph, ))
-        expand_t = np.array([process(i, t_min, t_max) for i in expand[0]])
-        self._graph = expand_t.reshape((self.num_graph, self.num_nodes, self.num_nodes))
-        self.__update_nx_graph()
+        self._graph = np.vectorize(process)(self._graph)
+        if generate_nx:
+            self.__update_nx_graph()
 
     def community_detection_louvain(self, resolution=1.):
         table = {
@@ -304,11 +304,13 @@ class GeoMultiGraph:
 if __name__ == '__main__':
     gmg = GeoMultiGraph()
     gmg.load('GeoMultiGraph_week')
+    gmg.threshold(t_min=3, generate_nx=True)
+    gmg.draw_dist(hist=True, kde=False, rug=False, bins=20)
+    cl = gmg.community_detection_louvain()
     cc = gmg.closeness_centrality
     in_degree = gmg.in_degree
     out_degree = gmg.out_degree
     degree = gmg.degree
-    cl = gmg.community_detection_louvain()
     plt = PlotView(column_num=2, row_num=2, title='Geo-Multi-Graph')
     plt[0, 0].name = 'Closeness-Centrality'
     plt[1, 0].name = 'in-degree'
