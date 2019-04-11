@@ -216,8 +216,8 @@ class MapBox(object):
         self._source = {}
         self._layer = {}
         self._event = []
-        self._dir_js = '../src/%s.js' % self._name
-        self._viewport.plv.add_js(self._dir_js)
+        self._dir_js = 'src/js/%s.js' % self._name
+        self._viewport.plv.add_js('js/%s.js' % self._name)
 
     @property
     def style(self):

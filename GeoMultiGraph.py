@@ -7,6 +7,7 @@ from shapely.geometry import LineString
 import matplotlib.pyplot as plt
 from pywebplot import *
 from palettable.colorbrewer.diverging import Spectral_10
+from scipy import stats
 
 NETWORK_LIST = ['2012',
                 '2013',
@@ -41,6 +42,14 @@ class GeoMultiGraph:
         if generate_nx:
             self.__update_nx_graph()
 
+    def recovery(self):
+        '''
+        recovery the origin data
+        :return:
+        '''
+        self._graph = self._root_graph
+        self.__update_nx_graph()
+
     @property
     def nx_graph(self):
         return self._nx_graph
@@ -55,12 +64,12 @@ class GeoMultiGraph:
 
     @property
     def edges(self):
+        print('Generating Edges Data Frame...')
+        connect_table = {'from_tazid': [],
+                         'to_taziid': [],
+                         'weight': [],
+                         'network': []}
         for g, index in zip(self.nx_graph, range(self.num_graph)):
-            connect_table = {'from_tazid': [],
-                             'to_taziid': [],
-                             'weight': [],
-                             'network': []}
-
             for i in range(self.num_nodes):
                 for j in range(self.num_nodes):
                     try:
@@ -75,17 +84,19 @@ class GeoMultiGraph:
                         connect_table['from_tazid'].append(from_tazid)
                     except KeyError as _:
                         continue
-            connect_df = pd.DataFrame.from_dict(connect_table)
-            return connect_df
+        connect_df = pd.DataFrame.from_dict(connect_table)
+        print('Finished.')
+        return connect_df
 
     @property
     def edges_geo(self):
+        print('Generating Geo Edges Data Frame...')
+        connect_table = {'from_tazid': [],
+                         'to_taziid': [],
+                         'weight': [],
+                         'network': [],
+                         'geometry': []}
         for g, index in zip(self.nx_graph, range(self.num_graph)):
-            connect_table = {'from_tazid': [],
-                             'to_taziid': [],
-                             'weight': [],
-                             'network': [],
-                             'geometry': []}
             for i in range(self.num_nodes):
                 for j in range(self.num_nodes):
                     try:
@@ -104,13 +115,56 @@ class GeoMultiGraph:
                     except KeyError as _:
                         continue
             connect_df = gpd.GeoDataFrame.from_dict(connect_table)
+            print('Finished.')
             return connect_df
+
+    def transform(self, func='log', generate_nx=False):
+        '''
+        call func for weight of the graph
+        :param func:
+        :param generate_nx:
+        :return:
+        '''
+        def tf_ln(x):
+            if x == 0:
+                return 0
+            else:
+                return np.log(x)
+
+        def tf_log2(x):
+            if x == 0:
+                return 0
+            else:
+                return np.log2(x)
+
+        def tf_log10(x):
+            if x == 0:
+                return 0
+            else:
+                return np.log10(x)
+
+        def tf_sqrt(x):
+            return np.sqrt(x)
+        func_dict = {
+            'log': tf_ln,
+            'log2': tf_log2,
+            'log10': tf_log10,
+            'sqrt': tf_sqrt
+        }
+        if func in func_dict.keys():
+            self._graph = np.vectorize(func_dict[func])(self._graph)
+        if func == 'cox':
+            expand = [stats.boxcox(g.reshape((self.num_nodes * self.num_nodes, )) + 0.00001)[0] for g in self._graph]
+            self._graph = np.array([g.reshape(self.num_nodes, self.num_nodes) for g in expand])
+        if generate_nx:
+            self.__update_nx_graph()
 
     def threshold(self, t_min=0, t_max=1000000, generate_nx=False):
         '''
         weight bigger than y_max will be set to t_max, lower than t_min will be set to 0.
         :param t_min:
         :param t_max:
+        :param generate_nx:
         :return:
         '''
         def process(x):
@@ -124,13 +178,12 @@ class GeoMultiGraph:
         if generate_nx:
             self.__update_nx_graph()
 
-    def community_detection_louvain(self, resolution=1.):
-        table = {
-            'tazid': [],
-            'community': []
-        }
-        df_partiton = []
-        for g in self.nx_graph:
+    def community_detection_louvain(self, resolution=1., min_size=10):
+        def louvain(g):
+            table = {
+                'tazid': [],
+                'community': []
+            }
             print('Louvain for network %s...' % g.graph['date'])
             g = nx.Graph(g)
             p = best_partition(g, weight='weight', resolution=resolution)
@@ -138,11 +191,10 @@ class GeoMultiGraph:
             for key, item in p.items():
                 table['tazid'].append(self.__get_tazid(key))
                 table['community'].append(item)
-            df_partiton.append(pd.DataFrame.from_dict(table))
-            table['tazid'].clear()
-            table['community'].clear()
-        print('Finished.')
-        return df_partiton
+            print('Finished %s.' % g.graph['date'])
+            return pd.DataFrame.from_dict(table)
+        df_partiton = map(louvain, self.nx_graph)
+        return self.__simplify_community(list(df_partiton), size=min_size)
 
     @property
     def closeness_centrality(self):
@@ -211,26 +263,20 @@ class GeoMultiGraph:
 
     def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
         sns.set_style('ticks')
+        sns.set(color_codes=True)
         graphs = sns.FacetGrid(self.edges, col='network')
         graphs.map(sns.distplot, 'weight', hist=hist, kde=kde, rug=rug, bins=bins)
+        plt.show()
 
-    def draw_multi_scale_community(self, map_view, community, title='community', cmap=Spectral_10):
-        community = community[0]
-        community_num = community['community'].max()
+    def draw_qq_plot(self):
+        def qqplot(x, **kwargs):
+            stats.probplot(x, dist='norm', plot=plt, fit=False)
 
-        def set_color(x):
-            mpl_colormap = cmap.get_mpl_colormap(N=community_num)
-            rgba = mpl_colormap(x.community)
-            return rgb2hex(rgba[0], rgba[1], rgba[2])
-        community_geo_map = self._geo_mapping.merge(community, on='tazid')
-        community_geo_map = community_geo_map[['tazid', 'community', 'geometry']]
-        community_geo_map['color'] = community_geo_map.apply(set_color)
-        community_geo_map.to_file('src/data/%s.geojson' % title, driver='GeoJSON')
-        source = GeojsonSource(id=title, data='data/%s.geojson')
-        map_view.add_source(source)
-        layer = FillLayer(id=title, source=title, p_fill_opacity=0.7, p_fill_color=['get', 'color'])
-        map_view.add_layer(layer)
-        map_view.update()
+        sns.set_style('ticks')
+        sns.set(color_codes=True)
+        graphs = sns.FacetGrid(self.edges, col='network')
+        graphs.map(qqplot, 'weight')
+        plt.show()
 
     def draw_choropleth_map(self, map_view, data, value='', title='Choropleth Map', cmap=Spectral_10):
         value_min = data[value].min()
@@ -240,15 +286,32 @@ class GeoMultiGraph:
             mpl_colormap = cmap.get_mpl_colormap(N=value_max-value_min)
             rgba = mpl_colormap(x[value] + value_min)
             return rgb2hex(rgba[0], rgba[1], rgba[2])
-        value_geo_map = self._geo_mapping.merge(data, on=value)
+        value_geo_map = self._geo_mapping.merge(data, on='tazid')
         value_geo_map = value_geo_map[['tazid', value, 'geometry']]
-        value_geo_map['color'] = value_geo_map.apply(set_color)
+        value_geo_map['color'] = value_geo_map.apply(set_color, axis=1)
         value_geo_map.to_file('src/data/%s.geojson' % title, driver='GeoJSON')
-        source = GeojsonSource(id=value, data='data/%s.geojson')
+        source = GeojsonSource(id=value, data='data/%s.geojson' % title)
         map_view.add_source(source)
         layer = FillLayer(id=value, source=value, p_fill_opacity=0.7, p_fill_color=['get', 'color'])
         map_view.add_layer(layer)
         map_view.update()
+
+    def draw_multi_scale_community(self, community, cmap=Spectral_10):
+        view = PlotView(column_num=3, row_num=2, title='Geo-Multi-Graph')
+        for subview, i in zip(view, range(self.num_graph)):
+            subview.name = NETWORK_LIST[i]
+        maps = [MapBox(name='map_%d' % i,
+                       pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
+                       lon=116.37363,
+                       lat=39.915606,
+                       style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
+                       pitch=55,
+                       bearing=0,
+                       zoom=12,
+                       viewport=view[i]) for i in range(self.num_graph)]
+        for i in range(self.num_graph):
+            self.draw_choropleth_map(map_view=maps[i], data=community[i], value='community', title='%scommunity' % NETWORK_LIST[i], cmap=cmap)
+        view.plot()
 
     def draw_single_network(self, map_view, network=NETWORK_LIST[0], color='white', width=1., value='weight', title='network', bk=True):
         connect_df = self.edges_geo[self.edges_geo['network'] == network]
@@ -300,13 +363,50 @@ class GeoMultiGraph:
             G.append(g)
         self._nx_graph = G
 
+    def simplify_community(self, data, size=10):
+        df_s_community = []
+        for community in data:
+            c_list = {}
+            r_list = []
+            un_list = []
+            for _, line in community.iterrows():
+                if line['community'] in c_list.keys():
+                    c_list[line['community']].append(line['tazid'])
+                else:
+                    c_list[line['community']] = [line['tazid']]
+            for key, item in c_list.items():
+                if len(item) <= size:
+                    for i in item:
+                        un_list.append(i)
+                else:
+                    r_list.append(item)
+            r_list.append(un_list)
+            table = {
+                'tazid': [],
+                'community': []
+            }
+            for r, i in zip(r_list, range(len(r_list))):
+                for k in r:
+                    table['tazid'].append(k)
+                    table['community'].append(i)
+            df_s_community.append(pd.DataFrame.from_dict(table))
+        return df_s_community
+
 
 if __name__ == '__main__':
     gmg = GeoMultiGraph()
     gmg.load('GeoMultiGraph_week')
-    gmg.threshold(t_min=3, generate_nx=True)
-    gmg.draw_dist(hist=True, kde=False, rug=False, bins=20)
-    cl = gmg.community_detection_louvain()
+    # gmg.threshold(t_min=3, generate_nx=True)
+    # gmg.transform(func='sqrt', generate_nx=True)
+    # gmg.draw_dist(hist=True, kde=False, rug=False, bins=20)
+    # gmg.draw_qq_plot()
+    # cl = gmg.community_detection_louvain(min_size=20)
+    cl = []
+    for i in NETWORK_LIST:
+        cl.append(pd.read_csv('%s.csv' % i))
+    cl = gmg.simplify_community(data=cl, size=20)
+    gmg.draw_multi_scale_community(community=cl, cmap=Spectral_10)
+    '''
     cc = gmg.closeness_centrality
     in_degree = gmg.in_degree
     out_degree = gmg.out_degree
@@ -356,3 +456,4 @@ if __name__ == '__main__':
     gmg.draw_choropleth_map(map_view=mb_1, data=in_degree[0], value='in_degree', title='in')
     gmg.draw_choropleth_map(map_view=mb_2, data=out_degree[0], value='out_degree', title='out')
     gmg.draw_single_network(map_view=mb_3, network='2012')
+    '''

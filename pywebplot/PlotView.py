@@ -18,10 +18,9 @@ class PlotView(object):
         height_subview = 100.0 / self._row_num
         self._subview = [SubView(width=width_subview, height=height_subview, name='subview-%d' % i, plv=self)
                          for i in range(self._column_num * self._row_num)]
-        self._dir_html = '../src/%s.html' % title.lower().replace(' ', '_')
-        self._dir_js = '../src/js/%s.js' % title.lower().replace(' ', '_')
-        self._js = ["<script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.js'></script>",
-                    '<script src="https://d3js.org/d3.v5.min.js"></script>']
+        self._dir_html = 'src/%s.html' % title.lower().replace(' ', '_')
+        self._dir_js = 'src/js/%s.js' % title.lower().replace(' ', '_')
+        self._js = []
         if os.path.exists(self._dir_html):
             os.remove(self._dir_html)
         if os.path.exists(self._dir_js):
@@ -36,7 +35,7 @@ class PlotView(object):
         if isinstance(index, int):
             return self._subview[index]
         elif isinstance(index, tuple):
-            return self._subview[index[0] * self._column_num + index[1]]
+            return self._subview[index[0] * self._row_num + index[1]]
 
     @property
     def dom(self):
@@ -74,14 +73,16 @@ class PlotView(object):
             <head>
                 <meta charset="utf-8">
                 <title>{{ title }}</title>
-                {% for link in js %}
-                {{ link }}
-                {% endfor %}
+                <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.js'></script>
+                <script src="https://d3js.org/d3.v5.min.js"></script>
                 <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.53.1/mapbox-gl.css' rel='stylesheet' />
             </head>
             <body>
                 <div class="plot-view">{{ dom }}</div>
                 <link href='style/index.css' rel='stylesheet' />
+                {% for link in js %}
+                {{ link }}
+                {% endfor %}
             </body>
             <style>body{ margin:0; padding:0; }</style>
         </html>
