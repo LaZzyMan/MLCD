@@ -43,4 +43,4 @@ mb.update()
 plt.plot() 
 ```
 Result:
-![Result](https://github.com/LaZzyMan/pywebplot/blob/master/example.png)
+![Result](https://github.com/LaZzyMan/pywebplot/blob/master/src/readme/example.png)

@@ -1,5 +1,3 @@
-import numpy as np
-import geopandas as gpd
 from community import best_partition, modularity
 import seaborn as sns
 import networkx as nx
@@ -30,14 +28,15 @@ class GeoMultiGraph:
             self._num_nodes = len(graph[0])
             self._num_graph = len(graph)
         self._nx_graph = None
+        mkdir()
 
     def save(self, file_name):
-        self._geo_mapping.to_file('src/data/' + file_name + '.geojson', driver='GeoJSON')
-        np.save('src/data/' + file_name + '.npy', self._graph)
+        self._geo_mapping.to_file('dist/data/' + file_name + '.geojson', driver='GeoJSON')
+        np.save('dist/data/' + file_name + '.npy', self._graph)
 
     def load(self, file_name, generate_nx=False):
-        self._graph = np.load('src/data/' + file_name + '.npy')
-        self._geo_mapping = gpd.read_file('src/data/' + file_name + '.geojson')
+        self._graph = np.load('dist/data/' + file_name + '.npy')
+        self._geo_mapping = gpd.read_file('dist/data/' + file_name + '.geojson')
         self._num_nodes = len(self._graph[0])
         self._num_graph = len(self._graph)
         if generate_nx:
@@ -192,9 +191,9 @@ class GeoMultiGraph:
             for key, item in p.items():
                 table['tazid'].append(self.__get_tazid(key))
                 table['community'].append(item)
-            community = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
+            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
             print('Finished %s, %d communities found, %d point unclassified.'
-                  % (g.graph['date'], len(community)-1, len(community[-1])))
+                  % (g.graph['date'], num_community, num_unclassify))
             return community
         df_partition = map(louvain, self.nx_graph)
         return list(df_partition)
@@ -301,6 +300,9 @@ class GeoMultiGraph:
         graphs.map(qqplot, 'weight')
         plt.show()
 
+    def draw_community_dist(self, c_list):
+        pass
+
     def draw_choropleth_map(self, map_view, data, value='', title='Choropleth Map', cmap=Spectral_10):
         value_min = data[value].min()
         value_max = data[value].max()
@@ -312,15 +314,15 @@ class GeoMultiGraph:
         value_geo_map = self._geo_mapping.merge(data, on='tazid')
         value_geo_map = value_geo_map[['tazid', value, 'geometry']]
         value_geo_map['color'] = value_geo_map.apply(set_color, axis=1)
-        value_geo_map.to_file('src/data/%s.geojson' % title, driver='GeoJSON')
-        source = GeojsonSource(id=value, data='data/%s.geojson' % title)
+        value_geo_map.to_file('dist/data/%s.geojson' % title, driver='GeoJSON')
+        source = GeojsonSource(id=value, data='%s.geojson' % title)
         map_view.add_source(source)
         layer = FillLayer(id=value, source=value, p_fill_opacity=0.7, p_fill_color=['get', 'color'])
         map_view.add_layer(layer)
         map_view.update()
 
-    def draw_multi_scale_community(self, community, cmap=Spectral_10):
-        view = PlotView(column_num=3, row_num=2, title='Geo-Multi-Graph')
+    def draw_multi_scale_community(self, community, cmap=Spectral_10, column=2, row=3, inline=False):
+        view = PlotView(column_num=row, row_num=column, title='Geo-Multi-Graph')
         for subview, i in zip(view, range(self.num_graph)):
             subview.name = NETWORK_LIST[i]
         maps = [MapBox(name='map_%d' % i,
@@ -335,6 +337,8 @@ class GeoMultiGraph:
         for i in range(self.num_graph):
             self.draw_choropleth_map(map_view=maps[i], data=community[i], value='community', title='%scommunity' % NETWORK_LIST[i], cmap=cmap)
         view.plot()
+        if inline:
+            view.show()
 
     def draw_single_network(self, map_view, network=NETWORK_LIST[0], color='white', width=1., value='weight', title='network', bk=True):
         connect_df = self.edges_geo[self.edges_geo['network'] == network]
@@ -343,8 +347,8 @@ class GeoMultiGraph:
         connect_df['opacity'] = connect_df['weight'].map(
             lambda x: (x - min_weight) / (max_weight - min_weight) * 0.8 + 0.00)
         draw_df = connect_df[['geometry', 'opacity']]
-        draw_df.to_file('src/data/%s.geojson' % title, driver='GeoJSON')
-        network_source = GeojsonSource(id=value, data='data/%s.geojson' % title)
+        draw_df.to_file('dist/data/%s.geojson' % title, driver='GeoJSON')
+        network_source = GeojsonSource(id=value, data='%s.geojson' % title)
         map_view.add_source(network_source)
         bk_layer = BackgroundLayer(id='bk',
                                    p_background_opacity=0.7,
@@ -361,8 +365,8 @@ class GeoMultiGraph:
 
     def draw_taz(self, map_view, color='#3BA1C3', fill_opacity=0.3):
         taz_unit_df = self._geo_mapping['geometry']
-        taz_unit_df.to_file('src/data/taz.geojson', driver='GeoJSON')
-        source = GeojsonSource(id='taz', data='data/taz.geojson')
+        taz_unit_df.to_file('dist/data/taz.geojson', driver='GeoJSON')
+        source = GeojsonSource(id='taz', data='taz.geojson')
         map_view.add_source(source)
         layer = FillLayer(id='taz', source='taz', p_fill_opacity=fill_opacity, p_fill_color=color)
         map_view.add_layer(layer)
@@ -411,7 +415,7 @@ class GeoMultiGraph:
             for k in r:
                 table['tazid'].append(k)
                 table['community'].append(i)
-        return pd.DataFrame.from_dict(table)
+        return pd.DataFrame.from_dict(table), len(r_list) - 1, len(un_list)
 
 
 if __name__ == '__main__':

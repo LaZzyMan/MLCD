@@ -2,6 +2,7 @@ from pywebplot import *
 import webbrowser
 import os
 from jinja2 import Template
+from IPython.display import HTML
 
 
 class PlotView(object):
@@ -18,9 +19,10 @@ class PlotView(object):
         height_subview = 100.0 / self._row_num
         self._subview = [SubView(width=width_subview, height=height_subview, name='subview-%d' % i, plv=self)
                          for i in range(self._column_num * self._row_num)]
-        self._dir_html = 'src/%s.html' % title.lower().replace(' ', '_')
-        self._dir_js = 'src/js/%s.js' % title.lower().replace(' ', '_')
+        self._dir_html = 'dist/%s.html' % title.lower().replace(' ', '_')
+        self._dir_js = 'dist/js/%s.js' % title.lower().replace(' ', '_')
         self._js = []
+        mkdir()
         if os.path.exists(self._dir_html):
             os.remove(self._dir_html)
         if os.path.exists(self._dir_js):
@@ -79,7 +81,7 @@ class PlotView(object):
             </head>
             <body>
                 <div class="plot-view">{{ dom }}</div>
-                <link href='style/index.css' rel='stylesheet' />
+                <link href='index.css' rel='stylesheet' />
                 {% for link in js %}
                 {{ link }}
                 {% endfor %}
@@ -91,7 +93,13 @@ class PlotView(object):
         with open(self._dir_html, 'w') as f:
             f.write(template.render(title=self._title, js=self._js, dom=self.dom))
             f.close()
-        webbrowser.open(self._dir_html)
+        webbrowser.open_new_tab(self._dir_html)
+
+    def show(self, host='localhost', port=4396):
+        httpd = WebServer(host=host, port=port)
+        httpd.add_view(title=self.title, filename='%s.html' % self.title.lower().replace(' ', '_'))
+        httpd.run()
+        HTML('<a href="%s/%s.html">link</a>' % (httpd.home_url, self.title.lower().replace(' ', '_')))
 
 
 class SubView(object):

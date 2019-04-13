@@ -216,8 +216,8 @@ class MapBox(object):
         self._source = {}
         self._layer = {}
         self._event = []
-        self._dir_js = 'src/js/%s.js' % self._name
-        self._viewport.plv.add_js('js/%s.js' % self._name)
+        self._dir_js = 'dist/js/%s.js' % self._name
+        self._viewport.plv.add_js('%s.js' % self._name)
 
     @property
     def style(self):
@@ -349,8 +349,8 @@ if __name__ == '__main__':
                 bearing=0,
                 zoom=12,
                 viewport=plt[0, 0])
-    network_source = GeojsonSource(id='network', data='data/network_0.geojson')
-    taz_source = GeojsonSource(id='taz', data='data/taz.geojson')
+    network_source = GeojsonSource(id='network', data='network_0.geojson')
+    taz_source = GeojsonSource(id='taz', data='taz.geojson')
     mb.add_source(network_source)
     mb.add_source(taz_source)
     bk_layer = BackgroundLayer(id='bk',
