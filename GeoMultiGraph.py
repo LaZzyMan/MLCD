@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from pywebplot import *
 from palettable.colorbrewer.diverging import Spectral_10
 from scipy import stats
+import powerlaw
 
 NETWORK_LIST = ['2012',
                 '2013',
@@ -191,10 +192,12 @@ class GeoMultiGraph:
             for key, item in p.items():
                 table['tazid'].append(self.__get_tazid(key))
                 table['community'].append(item)
-            print('Finished %s.' % g.graph['date'])
-            return pd.DataFrame.from_dict(table)
-        df_partiton = map(louvain, self.nx_graph)
-        return self.__simplify_community(list(df_partiton), size=min_size)
+            community = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
+            print('Finished %s, %d communities found, %d point unclassified.'
+                  % (g.graph['date'], len(community)-1, len(community[-1])))
+            return community
+        df_partition = map(louvain, self.nx_graph)
+        return list(df_partition)
 
     @property
     def closeness_centrality(self):
@@ -248,7 +251,7 @@ class GeoMultiGraph:
     @property
     def out_degree(self):
         table = {'tazid': [],
-                'out_degree': []}
+                 'out_degree': []}
         out_degree = []
         for g in self.nx_graph:
             print('Out Degree for %s...' % g.graph['date'])
@@ -266,6 +269,26 @@ class GeoMultiGraph:
         sns.set(color_codes=True)
         graphs = sns.FacetGrid(self.edges, col='network')
         graphs.map(sns.distplot, 'weight', hist=hist, kde=kde, rug=rug, bins=bins)
+        plt.show()
+
+    def draw_cdf(self):
+        def cdf(x, **kwargs):
+            powerlaw.plot_cdf(x)
+
+        sns.set_style('ticks')
+        sns.set(color_codes=True)
+        graphs = sns.FacetGrid(self.edges, col='network')
+        graphs.map(cdf, 'weight')
+        plt.show()
+
+    def draw_ccdf(self):
+        def ccdf(x, **kwargs):
+            powerlaw.plot_ccdf(x)
+
+        sns.set_style('ticks')
+        sns.set(color_codes=True)
+        graphs = sns.FacetGrid(self.edges, col='network')
+        graphs.map(ccdf, 'weight')
         plt.show()
 
     def draw_qq_plot(self):
@@ -363,48 +386,42 @@ class GeoMultiGraph:
             G.append(g)
         self._nx_graph = G
 
-    def simplify_community(self, data, size=10):
-        df_s_community = []
-        for community in data:
-            c_list = {}
-            r_list = []
-            un_list = []
-            for _, line in community.iterrows():
-                if line['community'] in c_list.keys():
-                    c_list[line['community']].append(line['tazid'])
-                else:
-                    c_list[line['community']] = [line['tazid']]
-            for key, item in c_list.items():
-                if len(item) <= size:
-                    for i in item:
-                        un_list.append(i)
-                else:
-                    r_list.append(item)
-            r_list.append(un_list)
-            table = {
-                'tazid': [],
-                'community': []
-            }
-            for r, i in zip(r_list, range(len(r_list))):
-                for k in r:
-                    table['tazid'].append(k)
-                    table['community'].append(i)
-            df_s_community.append(pd.DataFrame.from_dict(table))
-        return df_s_community
+    @staticmethod
+    def __simplify_community(community, size=10):
+        c_list = {}
+        r_list = []
+        un_list = []
+        for _, line in community.iterrows():
+            if line['community'] in c_list.keys():
+                c_list[line['community']].append(line['tazid'])
+            else:
+                c_list[line['community']] = [line['tazid']]
+        for key, item in c_list.items():
+            if len(item) <= size:
+                for i in item:
+                    un_list.append(i)
+            else:
+                r_list.append(item)
+        r_list.append(un_list)
+        table = {
+            'tazid': [],
+            'community': []
+        }
+        for r, i in zip(r_list, range(len(r_list))):
+            for k in r:
+                table['tazid'].append(k)
+                table['community'].append(i)
+        return pd.DataFrame.from_dict(table)
 
 
 if __name__ == '__main__':
     gmg = GeoMultiGraph()
-    gmg.load('GeoMultiGraph_week')
+    gmg.load('GeoMultiGraph_week', generate_nx=True)
     # gmg.threshold(t_min=3, generate_nx=True)
     # gmg.transform(func='sqrt', generate_nx=True)
     # gmg.draw_dist(hist=True, kde=False, rug=False, bins=20)
     # gmg.draw_qq_plot()
-    # cl = gmg.community_detection_louvain(min_size=20)
-    cl = []
-    for i in NETWORK_LIST:
-        cl.append(pd.read_csv('%s.csv' % i))
-    cl = gmg.simplify_community(data=cl, size=20)
+    cl = gmg.community_detection_louvain(min_size=20, resolution=2.)
     gmg.draw_multi_scale_community(community=cl, cmap=Spectral_10)
     '''
     cc = gmg.closeness_centrality
