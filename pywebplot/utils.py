@@ -1,12 +1,13 @@
 import os
+import shutil
 
 
 def clamp(x):
-    return max(0, min(x, 255))
+    return int(max(0, min(x, 255)))
 
 
 def rgb2hex(r, g, b):
-    if 0 < r < 1:
+    if r*g*b <= 1:
         r = int(r * 255)
         g = int(g * 255)
         b = int(b * 255)
@@ -32,3 +33,6 @@ def mkdir():
         os.mkdir('dist/style')
     if not os.path.exists('dist/image'):
         os.mkdir('dist/image')
+    if not os.path.exists('dist/style/index.css'):
+        shutil.copy('../src/style/index.css', 'dist/style')
+

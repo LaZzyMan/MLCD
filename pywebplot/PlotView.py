@@ -3,6 +3,7 @@ import webbrowser
 import os
 from jinja2 import Template
 from IPython.display import HTML
+from threading import Thread
 
 
 class PlotView(object):
@@ -68,7 +69,7 @@ class PlotView(object):
     def add_js(self, url):
         self._js.append('<script src="%s"></script>' % url)
 
-    def plot(self):
+    def plot(self,  host='localhost', port=4396, inline=False):
         html = '''
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -93,13 +94,18 @@ class PlotView(object):
         with open(self._dir_html, 'w') as f:
             f.write(template.render(title=self._title, js=self._js, dom=self.dom))
             f.close()
-        webbrowser.open_new_tab(self._dir_html)
-
-    def show(self, host='localhost', port=4396):
         httpd = WebServer(host=host, port=port)
         httpd.add_view(title=self.title, filename='%s.html' % self.title.lower().replace(' ', '_'))
-        httpd.run()
-        HTML('<a href="%s/%s.html">link</a>' % (httpd.home_url, self.title.lower().replace(' ', '_')))
+        if inline:
+            server_thread = Thread(target=httpd.run)
+            server_thread.daemon = True
+            server_thread.start()
+            HTML('<iframe src="http://%s/%s.html", width=1000, height=600></iframe>'
+                 % (httpd.home_url, self.title.lower().replace(' ', '_')))
+            httpd.clean()
+        else:
+            httpd.run()
+            webbrowser.open_new_tab(self._dir_html)
 
 
 class SubView(object):
@@ -118,8 +124,13 @@ class SubView(object):
     @property
     def dom(self):
         return '''
-        <div class="sub-view" id="%s" style="width: 100%%; height: %f%%"></div>
-        ''' % (self._name, self._height)
+        <div class="sub-view" style="width: 100%%; height: %f%%">
+            <div class="sub-view-content" id="%s" style="width: %fvw; height: %fvh"></div>
+            <div class="sub-view-title">
+                <span>%s</span>
+            </div>
+        </div>
+        ''' % (self._height, self._name, self._width, self._height, self.name)
 
     @property
     def name(self):

@@ -7,6 +7,7 @@ MIME_DIC = {
     '.js': 'application/javascript',
     '.css': 'text/css',
     '.json': 'application/json',
+    '.geojson': 'application/json',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
     '.gif': 'image/gif',
@@ -24,8 +25,7 @@ FILE_MAP = {
     '.gif': 'dist/image',
     '.txt': 'dist/data',
     '.avi': 'dist/data',
-    '.geojson': 'dist/data',
-    '.npy': 'dist/data'
+    '.geojson': 'dist/data'
 }
 
 
@@ -74,6 +74,10 @@ class WebServer(HTTPServer):
         for key, item in self.views.items():
             print('%s: http://%s:%s/%s' % (key, self._host, self._port, item))
         self.serve_forever()
+
+    def clean(self):
+        self.shutdown()
+        self.server_close()
 
 
 if __name__ == '__main__':

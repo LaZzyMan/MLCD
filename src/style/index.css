@@ -1,5 +1,34 @@
-body{ margin:0; padding:0; }
-.horizon-split{display: flex; flex-flow: row;}
-.vertical-split{display: flex; flex-flow: column;}
-.sub-view{display: block;}
-.plot-view{display: flex; flex-flow: row; width: 100vw; height: 100vh;}
+body{
+    margin:0;
+    padding:0;
+}
+.horizon-split{
+    display: flex;
+    flex-flow: row;
+}
+.vertical-split{
+    display: flex;
+    flex-flow: column;
+}
+.sub-view{
+    display: block;
+}
+.plot-view{
+    display: flex;
+    flex-flow: row;
+    width: 100vw;
+    height: 100vh;}
+.sub-view-title{
+    font-family: monospace;
+    font-size: 1.5em;
+    color: white;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 10%;
+    padding-top: 1vh;
+    padding-left: 1vw;
+}
+.sub-view-content{
+    position: absolute;
+}

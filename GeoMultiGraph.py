@@ -8,19 +8,13 @@ from palettable.colorbrewer.diverging import Spectral_10
 from scipy import stats
 import powerlaw
 
-NETWORK_LIST = ['2012',
-                '2013',
-                '2014',
-                '2015',
-                '2016',
-                '2017']
-
 
 class GeoMultiGraph:
-    def __init__(self, geo_mapping=None, graph=None):
+    def __init__(self, geo_mapping=None, graph=None, network_list=None):
         self._geo_mapping = geo_mapping
         self._root_graph = graph
         self._graph = graph
+        self._network_list = network_list
         if graph is None:
             self._num_nodes = 0
             self._num_graph = 0
@@ -31,14 +25,18 @@ class GeoMultiGraph:
         mkdir()
 
     def save(self, file_name):
-        self._geo_mapping.to_file('dist/data/' + file_name + '.geojson', driver='GeoJSON')
-        np.save('dist/data/' + file_name + '.npy', self._graph)
+        self._geo_mapping.to_file(file_name + '.geojson', driver='GeoJSON')
+        np.save(file_name + '.npy', self._graph)
 
-    def load(self, file_name, generate_nx=False):
-        self._graph = np.load('dist/data/' + file_name + '.npy')
-        self._geo_mapping = gpd.read_file('dist/data/' + file_name + '.geojson')
+    def load(self, file_name, generate_nx=False, network_list=None):
+        self._graph = np.load(file_name + '.npy')
+        self._geo_mapping = gpd.read_file(file_name + '.geojson')
         self._num_nodes = len(self._graph[0])
         self._num_graph = len(self._graph)
+        if network_list is None:
+            self._network_list = ['Network-%d' % i for i in range(self._num_graph)]
+        else:
+            self._network_list = network_list
         if generate_nx:
             self.__update_nx_graph()
 
@@ -76,7 +74,7 @@ class GeoMultiGraph:
                         weight = g.adj[i][j]['weight']
                         if weight == 0:
                             continue
-                        connect_table['network'].append(NETWORK_LIST[index])
+                        connect_table['network'].append(self._network_list[index])
                         connect_table['weight'].append(weight)
                         from_tazid = g.nodes[i]['tazid']
                         to_tazid = g.nodes[j]['tazid']
@@ -103,7 +101,7 @@ class GeoMultiGraph:
                         weight = g.adj[i][j]['weight']
                         if weight == 0:
                             continue
-                        connect_table['network'].append(NETWORK_LIST[index])
+                        connect_table['network'].append(self._network_list[index])
                         connect_table['weight'].append(weight)
                         from_tazid = g.nodes[i]['tazid']
                         to_tazid = g.nodes[j]['tazid']
@@ -216,6 +214,23 @@ class GeoMultiGraph:
         return closeness_centrality
 
     @property
+    def cluster_coefficient(self):
+        table = {'tazid': [],
+                 'closeness_centrality': []}
+        cc = []
+        for g in self.nx_graph:
+            print('Cluster coefficient for %s...' % g.graph['date'])
+            cc = nx.clustering(g)
+            for k, i in cc.items():
+                table['tazid'].append(g.nodes[k]['tazid'])
+                table['cluster_coefficient'].append(i)
+            cc.append(pd.DataFrame.from_dict(table))
+            table['tazid'].clear()
+            table['closeness_centrality'].clear()
+        print('Finished.')
+        return cc
+
+    @property
     def degree(self):
         table = {'tazid': [],
                  'in_degree': []}
@@ -300,8 +315,15 @@ class GeoMultiGraph:
         graphs.map(qqplot, 'weight')
         plt.show()
 
-    def draw_community_dist(self, c_list):
-        pass
+    def draw_community_dist(self, community, hist=True, kde=False, rug=False, bins=10):
+        for i, c in zip(self._network_list, community):
+            c['network'] = i
+        c_df = pd.concat(community, axis=0)
+        sns.set_style('ticks')
+        sns.set(color_codes=True)
+        graphs = sns.FacetGrid(c_df, col='network')
+        graphs.map(sns.distplot, 'community', hist=hist, kde=kde, rug=rug, bins=bins)
+        plt.show()
 
     def draw_choropleth_map(self, map_view, data, value='', title='Choropleth Map', cmap=Spectral_10):
         value_min = data[value].min()
@@ -324,7 +346,7 @@ class GeoMultiGraph:
     def draw_multi_scale_community(self, community, cmap=Spectral_10, column=2, row=3, inline=False):
         view = PlotView(column_num=row, row_num=column, title='Geo-Multi-Graph')
         for subview, i in zip(view, range(self.num_graph)):
-            subview.name = NETWORK_LIST[i]
+            subview.name = self._network_list[i]
         maps = [MapBox(name='map_%d' % i,
                        pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
                        lon=116.37363,
@@ -335,20 +357,42 @@ class GeoMultiGraph:
                        zoom=12,
                        viewport=view[i]) for i in range(self.num_graph)]
         for i in range(self.num_graph):
-            self.draw_choropleth_map(map_view=maps[i], data=community[i], value='community', title='%scommunity' % NETWORK_LIST[i], cmap=cmap)
-        view.plot()
-        if inline:
-            view.show()
+            self.draw_choropleth_map(map_view=maps[i], data=community[i], value='community', title='%scommunity' % self._network_list[i], cmap=cmap)
+        view.plot(inline=inline)
 
-    def draw_single_network(self, map_view, network=NETWORK_LIST[0], color='white', width=1., value='weight', title='network', bk=True):
-        connect_df = self.edges_geo[self.edges_geo['network'] == network]
-        min_weight = connect_df['weight'].min()
-        max_weight = connect_df['weight'].max()
-        connect_df['opacity'] = connect_df['weight'].map(
+    def draw_network(self, color='white', width=1., value='weight', bk=True, inline=False, row=3, column=2):
+        view = PlotView(column_num=row, row_num=column, title='Network')
+        for subview, i in zip(view, range(self.num_graph)):
+            subview.name = self._network_list[i]
+        maps = [MapBox(name='map_network_%d' % i,
+                       pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
+                       lon=116.37363,
+                       lat=39.915606,
+                       style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
+                       pitch=55,
+                       bearing=0,
+                       zoom=12,
+                       viewport=view[i]) for i in range(self.num_graph)]
+        edge_df = self.edges_geo
+        for i in range(self.num_graph):
+            self.draw_single_network(map_view=maps[i],
+                                     data=edge_df[edge_df['network'] == self._network_list[i]],
+                                     color=color,
+                                     width=width,
+                                     value=value,
+                                     title='Network-%s' % self._network_list[i],
+                                     bk=bk)
+        view.plot(inline=inline)
+
+    def draw_single_network(self, map_view, data, color='white', width=1., value='weight', title='network', bk=True):
+        print('Drawing %s...' % title)
+        min_weight = data[value].min()
+        max_weight = data[value].max()
+        data['opacity'] = data[value].map(
             lambda x: (x - min_weight) / (max_weight - min_weight) * 0.8 + 0.00)
-        draw_df = connect_df[['geometry', 'opacity']]
+        draw_df = data[['geometry', 'opacity', value]]
         draw_df.to_file('dist/data/%s.geojson' % title, driver='GeoJSON')
-        network_source = GeojsonSource(id=value, data='%s.geojson' % title)
+        network_source = GeojsonSource(id=title, data='%s.geojson' % title)
         map_view.add_source(network_source)
         bk_layer = BackgroundLayer(id='bk',
                                    p_background_opacity=0.7,
@@ -362,6 +406,7 @@ class GeoMultiGraph:
             map_view.add_layer(bk_layer)
         map_view.add_layer(network_layer)
         map_view.update()
+        print('Finished.')
 
     def draw_taz(self, map_view, color='#3BA1C3', fill_opacity=0.3):
         taz_unit_df = self._geo_mapping['geometry']
@@ -377,7 +422,7 @@ class GeoMultiGraph:
 
     def __update_nx_graph(self):
         G = []
-        for l, time in zip(self._graph, NETWORK_LIST):
+        for l, time in zip(self._graph, self._network_list):
             print('Generating Network %s' % time)
             g = nx.DiGraph(date=time)
             for i in range(len(l)):
@@ -420,7 +465,7 @@ class GeoMultiGraph:
 
 if __name__ == '__main__':
     gmg = GeoMultiGraph()
-    gmg.load('GeoMultiGraph_week', generate_nx=True)
+    gmg.load('GeoMultiGraph_week', generate_nx=True, network_list=['2012', '2013', '2014', '2015', '2016', '2017'])
     # gmg.threshold(t_min=3, generate_nx=True)
     # gmg.transform(func='sqrt', generate_nx=True)
     # gmg.draw_dist(hist=True, kde=False, rug=False, bins=20)
