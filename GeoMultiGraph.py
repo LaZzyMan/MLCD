@@ -1,12 +1,53 @@
 from community import best_partition, modularity
 import seaborn as sns
-import networkx as nx
+import time
 from shapely.geometry import LineString
 import matplotlib.pyplot as plt
 from pywebplot import *
 from palettable.colorbrewer.diverging import Spectral_10
 from scipy import stats
 import powerlaw
+import infomap
+
+
+def get_closeness_centrality(g):
+    table = {'tazid': [],
+             'closeness_centrality': []}
+    cc = nx.closeness_centrality(g)
+    for k, i in cc.items():
+        table['tazid'].append(g.nodes[k]['tazid'])
+        table['closeness_centrality'].append(i)
+    return pd.DataFrame.from_dict(table)
+
+
+def get_degree_centrality(g):
+    table = {'tazid': [],
+             'degree_centrality': []}
+    cc = nx.degree_centrality(g)
+    for k, i in cc.items():
+        table['tazid'].append(g.nodes[k]['tazid'])
+        table['degree_centrality'].append(i)
+    return pd.DataFrame.from_dict(table)
+
+
+def get_eigenvector_centrality(g):
+    table = {'tazid': [],
+             'eigenvector_centrality': []}
+    cc = nx.eigenvector_centrality(g)
+    for k, i in cc.items():
+        table['tazid'].append(g.nodes[k]['tazid'])
+        table['eigenvector_centrality'].append(i)
+    return pd.DataFrame.from_dict(table)
+
+
+def get_cluster_coefficient(g):
+    table = {'tazid': [],
+             'cluster_coefficient': []}
+    cc = nx.clustering(g)
+    for k, i in cc.items():
+        table['tazid'].append(g.nodes[k]['tazid'])
+        table['cluster_coefficient'].append(i)
+    return pd.DataFrame.from_dict(table)
 
 
 class GeoMultiGraph:
@@ -112,9 +153,9 @@ class GeoMultiGraph:
                         connect_table['geometry'].append(LineString([from_point, to_point]))
                     except KeyError as _:
                         continue
-            connect_df = gpd.GeoDataFrame.from_dict(connect_table)
-            print('Finished.')
-            return connect_df
+        connect_df = gpd.GeoDataFrame.from_dict(connect_table)
+        print('Finished.')
+        return connect_df
 
     def transform(self, func='log', generate_nx=False):
         '''
@@ -196,39 +237,52 @@ class GeoMultiGraph:
         df_partition = map(louvain, self.nx_graph)
         return list(df_partition)
 
+    def community_detection_infomap(self, min_size=10):
+        communities = []
+        for g in self.nx_graph:
+            table = {
+                'tazid': [],
+                'community': []
+            }
+            infomap_wrapper = infomap.Infomap('--two-level --directed')
+            network = infomap_wrapper.network()
+            for i in range(self.num_nodes):
+                for j in range(self.num_nodes):
+                    try:
+                        weight = g.adj[i][j]['weight']
+                        if weight == 0:
+                            continue
+                        network.addLink(i, j, float(weight))
+                    except KeyError:
+                        continue
+            infomap_wrapper.run()
+            print("Found %d top modules with codelength: %f" %
+                  (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
+            for node in infomap_wrapper.iterTree():
+                if node.isLeaf():
+                    table['tazid'].append(self.__get_tazid(node.physicalId))
+                    table['community'].append(node.moduleIndex())
+            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
+            print('Finished %s, %d communities found, %d point unclassified.'
+                  % (g.graph['date'], num_community, num_unclassify))
+            communities.append(community)
+        return communities
+
     @property
     def closeness_centrality(self):
-        table = {'tazid': [],
-                 'closeness_centrality': []}
-        closeness_centrality = []
-        for g in self.nx_graph:
-            print('Closeness Centrality for %s...' % g.graph['date'])
-            cc = nx.closeness_centrality(g)
-            for k, i in cc.items():
-                table['tazid'].append(g.nodes[k]['tazid'])
-                table['closeness_centrality'].append(i)
-            closeness_centrality.append(pd.DataFrame.from_dict(table))
-            table['tazid'].clear()
-            table['closeness_centrality'].clear()
-        print('Finished.')
-        return closeness_centrality
+        return [get_closeness_centrality(g) for g in self.nx_graph]
 
     @property
     def cluster_coefficient(self):
-        table = {'tazid': [],
-                 'closeness_centrality': []}
-        cc = []
-        for g in self.nx_graph:
-            print('Cluster coefficient for %s...' % g.graph['date'])
-            cc = nx.clustering(g)
-            for k, i in cc.items():
-                table['tazid'].append(g.nodes[k]['tazid'])
-                table['cluster_coefficient'].append(i)
-            cc.append(pd.DataFrame.from_dict(table))
-            table['tazid'].clear()
-            table['closeness_centrality'].clear()
-        print('Finished.')
-        return cc
+        return [get_cluster_coefficient(g) for g in self.nx_graph]
+
+    @property
+    def degree_centrality(self):
+        return [get_degree_centrality(g) for g in self.nx_graph]
+
+    @property
+    def eigenvector_centrality(self):
+        return [get_eigenvector_centrality(g) for g in self.nx_graph]
 
     @property
     def degree(self):
@@ -336,15 +390,15 @@ class GeoMultiGraph:
         value_geo_map = self._geo_mapping.merge(data, on='tazid')
         value_geo_map = value_geo_map[['tazid', value, 'geometry']]
         value_geo_map['color'] = value_geo_map.apply(set_color, axis=1)
-        value_geo_map.to_file('dist/data/%s.geojson' % title, driver='GeoJSON')
-        source = GeojsonSource(id=value, data='%s.geojson' % title)
+        value_geo_map.to_file('dist/data/%s.geojson' % title + str(int(time.time())), driver='GeoJSON')
+        source = GeojsonSource(id=value, data='%s.geojson' % title + str(int(time.time())))
         map_view.add_source(source)
         layer = FillLayer(id=value, source=value, p_fill_opacity=0.7, p_fill_color=['get', 'color'])
         map_view.add_layer(layer)
         map_view.update()
 
-    def draw_multi_scale_community(self, community, cmap=Spectral_10, column=2, row=3, inline=False):
-        view = PlotView(column_num=row, row_num=column, title='Geo-Multi-Graph')
+    def draw_multi_scale_community(self, community, cmap=Spectral_10, column=2, row=3, inline=False, title='Geo-Multi-Graph'):
+        view = PlotView(column_num=row, row_num=column, title=title)
         for subview, i in zip(view, range(self.num_graph)):
             subview.name = self._network_list[i]
         maps = [MapBox(name='map_%d' % i,
@@ -376,7 +430,7 @@ class GeoMultiGraph:
         edge_df = self.edges_geo
         for i in range(self.num_graph):
             self.draw_single_network(map_view=maps[i],
-                                     data=edge_df[edge_df['network'] == self._network_list[i]],
+                                     data=edge_df[edge_df['network'] == self._network_list[i]].copy(),
                                      color=color,
                                      width=width,
                                      value=value,
@@ -391,8 +445,8 @@ class GeoMultiGraph:
         data['opacity'] = data[value].map(
             lambda x: (x - min_weight) / (max_weight - min_weight) * 0.8 + 0.00)
         draw_df = data[['geometry', 'opacity', value]]
-        draw_df.to_file('dist/data/%s.geojson' % title, driver='GeoJSON')
-        network_source = GeojsonSource(id=title, data='%s.geojson' % title)
+        draw_df.to_file('dist/data/%s.geojson' % title + str(int(time.time())), driver='GeoJSON')
+        network_source = GeojsonSource(id=title, data='%s.geojson' % title + str(int(time.time())))
         map_view.add_source(network_source)
         bk_layer = BackgroundLayer(id='bk',
                                    p_background_opacity=0.7,
@@ -472,54 +526,3 @@ if __name__ == '__main__':
     # gmg.draw_qq_plot()
     cl = gmg.community_detection_louvain(min_size=20, resolution=2.)
     gmg.draw_multi_scale_community(community=cl, cmap=Spectral_10)
-    '''
-    cc = gmg.closeness_centrality
-    in_degree = gmg.in_degree
-    out_degree = gmg.out_degree
-    degree = gmg.degree
-    plt = PlotView(column_num=2, row_num=2, title='Geo-Multi-Graph')
-    plt[0, 0].name = 'Closeness-Centrality'
-    plt[1, 0].name = 'in-degree'
-    plt[1, 1].name = 'out-degree'
-    plt[0, 1].name = 'degree'
-    mb_0 = MapBox(name='map-0',
-                  pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
-                  lon=116.37363,
-                  lat=39.915606,
-                  style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
-                  pitch=55,
-                  bearing=0,
-                  zoom=12,
-                  viewport=plt[0, 0])
-    mb_1 = MapBox(name='map-1',
-                  pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
-                  lon=116.37363,
-                  lat=39.915606,
-                  style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
-                  pitch=55,
-                  bearing=0,
-                  zoom=12,
-                  viewport=plt[1, 0])
-    mb_2 = MapBox(name='map-2',
-                  pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
-                  lon=116.37363,
-                  lat=39.915606,
-                  style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
-                  pitch=55,
-                  bearing=0,
-                  zoom=12,
-                  viewport=plt[1, 1])
-    mb_3 = MapBox(name='map-3',
-                  pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
-                  lon=116.37363,
-                  lat=39.915606,
-                  style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
-                  pitch=55,
-                  bearing=0,
-                  zoom=12,
-                  viewport=plt[0, 1])
-    gmg.draw_choropleth_map(map_view=mb_0, data=cc[0], value='closeness_centrality', title='cc')
-    gmg.draw_choropleth_map(map_view=mb_1, data=in_degree[0], value='in_degree', title='in')
-    gmg.draw_choropleth_map(map_view=mb_2, data=out_degree[0], value='out_degree', title='out')
-    gmg.draw_single_network(map_view=mb_3, network='2012')
-    '''

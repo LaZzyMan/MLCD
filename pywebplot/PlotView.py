@@ -3,7 +3,6 @@ import webbrowser
 import os
 from jinja2 import Template
 from IPython.display import HTML
-from threading import Thread
 
 
 class PlotView(object):
@@ -13,6 +12,7 @@ class PlotView(object):
         :param column_num: subview number per column
         :param row_num: subview number per row
         '''
+        self._server = WEB_SERVER
         self._title = title
         self._column_num = column_num
         self._row_num = row_num
@@ -69,7 +69,7 @@ class PlotView(object):
     def add_js(self, url):
         self._js.append('<script src="%s"></script>' % url)
 
-    def plot(self,  host='localhost', port=4396, inline=False):
+    def plot(self, inline=False):
         html = '''
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -94,17 +94,12 @@ class PlotView(object):
         with open(self._dir_html, 'w') as f:
             f.write(template.render(title=self._title, js=self._js, dom=self.dom))
             f.close()
-        httpd = WebServer(host=host, port=port)
-        httpd.add_view(title=self.title, filename='%s.html' % self.title.lower().replace(' ', '_'))
+        self._server.add_view(title=self.title, filename='%s.html' % self.title.lower().replace(' ', '_'))
+        self._server.run_bk()
         if inline:
-            server_thread = Thread(target=httpd.run)
-            server_thread.daemon = True
-            server_thread.start()
             HTML('<iframe src="http://%s/%s.html", width=1000, height=600></iframe>'
-                 % (httpd.home_url, self.title.lower().replace(' ', '_')))
-            httpd.clean()
+                 % (self._server.home_url, self.title.lower().replace(' ', '_')))
         else:
-            httpd.run()
             webbrowser.open_new_tab(self._dir_html)
 
 

@@ -1,6 +1,10 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from os import path
 from urllib.parse import urlparse
+from threading import Thread
+
+PORT = 4396
+HOST = 'localhost'
 
 MIME_DIC = {
     '.html': 'text/html',
@@ -50,6 +54,9 @@ class FileRequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, 'File Not Found: %s' % self.path)
 
+    def log_message(self, format, *args):
+        return
+
 
 class WebServer(HTTPServer):
     def __init__(self, port=4396, host='localhost'):
@@ -60,6 +67,7 @@ class WebServer(HTTPServer):
 
     def add_view(self, title, filename):
         self._views[title] = filename
+        print('%s: http://%s:%s/%s' % (title, self._host, self._port, filename))
 
     @property
     def views(self):
@@ -71,16 +79,32 @@ class WebServer(HTTPServer):
 
     def run(self):
         print("Starting server, listen at: http://%s:%s" % (self._host, self._port))
-        for key, item in self.views.items():
-            print('%s: http://%s:%s/%s' % (key, self._host, self._port, item))
         self.serve_forever()
+
+    def run_bk(self):
+        server_thread = Thread(target=self.run)
+        server_thread.daemon = True
+        server_thread.start()
 
     def clean(self):
         self.shutdown()
         self.server_close()
 
 
+def create_server():
+    port = PORT
+    while True:
+        try:
+            return WebServer(host=HOST, port=port)
+        except OSError:
+            port = port + 1
+            continue
+
+
+WEB_SERVER = create_server()
+
+
 if __name__ == '__main__':
     httpd = WebServer()
     httpd.add_view(title='Test', filename='index.html')
-    httpd.run()
+    httpd.run_bk()
