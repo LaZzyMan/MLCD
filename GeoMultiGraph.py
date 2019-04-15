@@ -8,6 +8,7 @@ from palettable.colorbrewer.diverging import Spectral_10
 from scipy import stats
 import powerlaw
 import infomap
+import tensorly as tl
 
 
 def get_closeness_centrality(g):
@@ -157,117 +158,6 @@ class GeoMultiGraph:
         print('Finished.')
         return connect_df
 
-    def transform(self, func='log', generate_nx=False):
-        '''
-        call func for weight of the graph
-        :param func:
-        :param generate_nx:
-        :return:
-        '''
-        def tf_ln(x):
-            if x == 0:
-                return 0
-            else:
-                return np.log(x)
-
-        def tf_log2(x):
-            if x == 0:
-                return 0
-            else:
-                return np.log2(x)
-
-        def tf_log10(x):
-            if x == 0:
-                return 0
-            else:
-                return np.log10(x)
-
-        def tf_sqrt(x):
-            return np.sqrt(x)
-        func_dict = {
-            'log': tf_ln,
-            'log2': tf_log2,
-            'log10': tf_log10,
-            'sqrt': tf_sqrt
-        }
-        if func in func_dict.keys():
-            self._graph = np.vectorize(func_dict[func])(self._graph)
-        if func == 'cox':
-            expand = [stats.boxcox(g.reshape((self.num_nodes * self.num_nodes, )) + 0.00001)[0] for g in self._graph]
-            self._graph = np.array([g.reshape(self.num_nodes, self.num_nodes) for g in expand])
-        if generate_nx:
-            self.__update_nx_graph()
-
-    def threshold(self, t_min=0, t_max=1000000, generate_nx=False):
-        '''
-        weight bigger than y_max will be set to t_max, lower than t_min will be set to 0.
-        :param t_min:
-        :param t_max:
-        :param generate_nx:
-        :return:
-        '''
-        def process(x):
-            if x < t_min:
-                return 0
-            if x > t_max:
-                return t_max
-            return x
-
-        self._graph = np.vectorize(process)(self._graph)
-        if generate_nx:
-            self.__update_nx_graph()
-
-    def community_detection_louvain(self, resolution=1., min_size=10):
-        def louvain(g):
-            table = {
-                'tazid': [],
-                'community': []
-            }
-            print('Louvain for network %s...' % g.graph['date'])
-            g = nx.Graph(g)
-            p = best_partition(g, weight='weight', resolution=resolution)
-            print('Network %s Modularity: %f.' % (g.graph['date'], modularity(p, g, weight='weight')))
-            for key, item in p.items():
-                table['tazid'].append(self.__get_tazid(key))
-                table['community'].append(item)
-            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
-            print('Finished %s, %d communities found, %d point unclassified.'
-                  % (g.graph['date'], num_community, num_unclassify))
-            return community
-        df_partition = map(louvain, self.nx_graph)
-        return list(df_partition)
-
-    def community_detection_infomap(self, min_size=10):
-        communities = []
-        for g in self.nx_graph:
-            table = {
-                'tazid': [],
-                'community': []
-            }
-            infomap_wrapper = infomap.Infomap('--two-level --directed')
-            network = infomap_wrapper.network()
-            for i in range(self.num_nodes):
-                for j in range(self.num_nodes):
-                    try:
-                        weight = g.adj[i][j]['weight']
-                        if weight == 0:
-                            continue
-                        network.addLink(i, j, float(weight))
-                    except KeyError:
-                        continue
-            infomap_wrapper.run()
-            print("Found %d top modules with codelength: %f" %
-                  (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
-            for node in infomap_wrapper.iterTree():
-                if node.isLeaf():
-                    table['tazid'].append(self.__get_tazid(node.physicalId))
-                    table['community'].append(node.moduleIndex())
-            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
-            print('Finished %s, %d communities found, %d point unclassified.'
-                  % (g.graph['date'], num_community, num_unclassify))
-            communities.append(community)
-        return communities
-
     @property
     def closeness_centrality(self):
         return [get_closeness_centrality(g) for g in self.nx_graph]
@@ -332,6 +222,136 @@ class GeoMultiGraph:
         print('Finished.')
         return out_degree
 
+    def transform(self, func='log', generate_nx=False):
+        '''
+        call func for weight of the graph
+        :param func:
+        :param generate_nx:
+        :return:
+        '''
+        def tf_ln(x):
+            if x == 0:
+                return 0
+            else:
+                return np.log(x)
+
+        def tf_log2(x):
+            if x == 0:
+                return 0
+            else:
+                return np.log2(x)
+
+        def tf_log10(x):
+            if x == 0:
+                return 0
+            else:
+                return np.log10(x)
+
+        def tf_sqrt(x):
+            return np.sqrt(x)
+        func_dict = {
+            'log': tf_ln,
+            'log2': tf_log2,
+            'log10': tf_log10,
+            'sqrt': tf_sqrt
+        }
+        if func in func_dict.keys():
+            self._graph = np.vectorize(func_dict[func])(self._graph)
+        if func == 'cox':
+            expand = [stats.boxcox(g.reshape((self.num_nodes * self.num_nodes, )) + 0.00001)[0] for g in self._graph]
+            self._graph = np.array([g.reshape(self.num_nodes, self.num_nodes) for g in expand])
+        if generate_nx:
+            self.__update_nx_graph()
+
+    def threshold(self, t_min=0, t_max=1000000, generate_nx=False):
+        '''
+        weight bigger than y_max will be set to t_max, lower than t_min will be set to 0.
+        :param t_min:
+        :param t_max:
+        :param generate_nx:
+        :return:
+        '''
+        def process(x):
+            if x < t_min:
+                return 0
+            if x > t_max:
+                return t_max
+            return x
+
+        self._graph = np.vectorize(process)(self._graph)
+        if generate_nx:
+            self.__update_nx_graph()
+
+    def generate_tensor(self):
+        tensor = tl.tensor(np.zeros([self.num_nodes, self.num_nodes, self.num_graph, self.num_graph], dtype=np.float64))
+        for node_0 in range(self.num_nodes):
+            for node_1 in range(self.num_nodes):
+                for layer_0 in range(self.num_graph):
+                    for layer_1 in range(self.num_graph):
+                        if layer_0 == layer_1:
+                            if node_0 == node_1:
+                                continue
+                            else:
+                                tensor[node_0][node_1][layer_0][layer_1] = self._graph[layer_0][node_0][node_1]
+                        else:
+                            time_bin = abs(layer_0 - layer_1)
+                            geo_bin = 0
+        return tensor
+
+    def community_detection_louvain(self, resolution=1., min_size=10):
+        def louvain(g):
+            table = {
+                'tazid': [],
+                'community': []
+            }
+            print('Louvain for network %s...' % g.graph['date'])
+            g = nx.Graph(g)
+            p = best_partition(g, weight='weight', resolution=resolution)
+            print('Network %s Modularity: %f.' % (g.graph['date'], modularity(p, g, weight='weight')))
+            for key, item in p.items():
+                table['tazid'].append(self.__get_tazid(key))
+                table['community'].append(item)
+            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
+            print('Finished %s, %d communities found, %d point unclassified.'
+                  % (g.graph['date'], num_community, num_unclassify))
+            return community
+        df_partition = map(louvain, self.nx_graph)
+        return list(df_partition)
+
+    def community_detection_infomap(self, min_size=10):
+        communities = []
+        for g in self.nx_graph:
+            table = {
+                'tazid': [],
+                'community': []
+            }
+            infomap_wrapper = infomap.Infomap('--two-level --directed')
+            network = infomap_wrapper.network()
+            for i in range(self.num_nodes):
+                for j in range(self.num_nodes):
+                    try:
+                        weight = g.adj[i][j]['weight']
+                        if weight == 0:
+                            continue
+                        network.addLink(i, j, float(weight))
+                    except KeyError:
+                        continue
+            infomap_wrapper.run()
+            print("Found %d top modules with codelength: %f" %
+                  (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
+            for node in infomap_wrapper.iterTree():
+                if node.isLeaf():
+                    table['tazid'].append(self.__get_tazid(node.physicalId))
+                    table['community'].append(node.moduleIndex())
+            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
+            print('Finished %s, %d communities found, %d point unclassified.'
+                  % (g.graph['date'], num_community, num_unclassify))
+            communities.append(community)
+        return communities
+
+    def community_detection_multi_infomap(self):
+        pass
+
     def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
         sns.set_style('ticks')
         sns.set(color_codes=True)
@@ -380,18 +400,19 @@ class GeoMultiGraph:
         plt.show()
 
     def draw_choropleth_map(self, map_view, data, value='', title='Choropleth Map', cmap=Spectral_10):
+        timestamp = int(time.time())
         value_min = data[value].min()
         value_max = data[value].max()
+        mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min)
 
         def set_color(x):
-            mpl_colormap = cmap.get_mpl_colormap(N=value_max-value_min)
             rgba = mpl_colormap(x[value] + value_min)
             return rgb2hex(rgba[0], rgba[1], rgba[2])
         value_geo_map = self._geo_mapping.merge(data, on='tazid')
         value_geo_map = value_geo_map[['tazid', value, 'geometry']]
         value_geo_map['color'] = value_geo_map.apply(set_color, axis=1)
-        value_geo_map.to_file('dist/data/%s.geojson' % title + str(int(time.time())), driver='GeoJSON')
-        source = GeojsonSource(id=value, data='%s.geojson' % title + str(int(time.time())))
+        value_geo_map.to_file('dist/data/%s.geojson' % (title + str(timestamp)), driver='GeoJSON')
+        source = GeojsonSource(id=value, data='%s.geojson' % (title + str(timestamp)))
         map_view.add_source(source)
         layer = FillLayer(id=value, source=value, p_fill_opacity=0.7, p_fill_color=['get', 'color'])
         map_view.add_layer(layer)
@@ -439,14 +460,15 @@ class GeoMultiGraph:
         view.plot(inline=inline)
 
     def draw_single_network(self, map_view, data, color='white', width=1., value='weight', title='network', bk=True):
+        timestamp = int(time.time())
         print('Drawing %s...' % title)
         min_weight = data[value].min()
         max_weight = data[value].max()
         data['opacity'] = data[value].map(
             lambda x: (x - min_weight) / (max_weight - min_weight) * 0.8 + 0.00)
         draw_df = data[['geometry', 'opacity', value]]
-        draw_df.to_file('dist/data/%s.geojson' % title + str(int(time.time())), driver='GeoJSON')
-        network_source = GeojsonSource(id=title, data='%s.geojson' % title + str(int(time.time())))
+        draw_df.to_file('dist/data/%s.geojson' % (title + str(timestamp)), driver='GeoJSON')
+        network_source = GeojsonSource(id=title, data='%s.geojson' % (title + str(timestamp)))
         map_view.add_source(network_source)
         bk_layer = BackgroundLayer(id='bk',
                                    p_background_opacity=0.7,
@@ -515,6 +537,12 @@ class GeoMultiGraph:
                 table['tazid'].append(k)
                 table['community'].append(i)
         return pd.DataFrame.from_dict(table), len(r_list) - 1, len(un_list)
+
+    def __cal_topology_distance(self):
+        pass
+
+    def __cal_2d_distance(self):
+        pass
 
 
 if __name__ == '__main__':
