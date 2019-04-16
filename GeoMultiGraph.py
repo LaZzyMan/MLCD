@@ -9,6 +9,7 @@ from scipy import stats
 import powerlaw
 import infomap
 import tensorly as tl
+import pysal
 
 
 def get_closeness_centrality(g):
@@ -177,7 +178,7 @@ class GeoMultiGraph:
     @property
     def degree(self):
         table = {'tazid': [],
-                 'in_degree': []}
+                 'degree': []}
         degree = []
         for g in self.nx_graph:
             print('Degree for %s...' % g.graph['date'])
@@ -406,7 +407,7 @@ class GeoMultiGraph:
         mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min)
 
         def set_color(x):
-            rgba = mpl_colormap(x[value] + value_min)
+            rgba = mpl_colormap((x[value] + value_min))
             return rgb2hex(rgba[0], rgba[1], rgba[2])
         value_geo_map = self._geo_mapping.merge(data, on='tazid')
         value_geo_map = value_geo_map[['tazid', value, 'geometry']]
@@ -539,7 +540,14 @@ class GeoMultiGraph:
         return pd.DataFrame.from_dict(table), len(r_list) - 1, len(un_list)
 
     def __cal_topology_distance(self):
-        pass
+        w = pysal.weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
+        td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.int)
+        for i in range(self.num_nodes):
+            for j in range(i + 1, self.num_nodes):
+                if j in w.neighbors[i]:
+                    td[i][j] = 1
+                    td[j][i] = 1
+        return td
 
     def __cal_2d_distance(self):
         pass
