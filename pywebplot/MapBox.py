@@ -68,12 +68,24 @@ class BackgroundLayer(Layer):
 class FillLayer(Layer):
     def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
         '''
-        create a line layer
+        create a fill layer
         :param id:
         :param source:
         :param kwargs: paint params
         '''
         super().__init__(id, 'fill', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
+
+
+class FillExtrusionLayer(Layer):
+    def __init__(self, id, source, maxzoom=24, minzoom=0, **kwargs):
+        '''
+        :param id:
+        :param source:
+        :param maxzoom:
+        :param minzoom:
+        :param kwargs:
+        '''
+        super().__init__(id, 'fill-extrusion', source, maxzoom=maxzoom, minzoom=minzoom, **kwargs)
 
 
 class SymbolLayer(Layer):

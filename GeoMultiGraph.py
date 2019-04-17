@@ -9,7 +9,7 @@ from scipy import stats
 import powerlaw
 import infomap
 import tensorly as tl
-import pysal
+from pysal.lib import weights
 
 
 def get_closeness_centrality(g):
@@ -283,20 +283,39 @@ class GeoMultiGraph:
         if generate_nx:
             self.__update_nx_graph()
 
-    def generate_tensor(self):
+    def generate_tensor(self, geo_weight='queen', connect='flow'):
+        geo_weight_dict = {
+            'queen': self.__queen_neighbor_weight,
+            'queen2': self.__queen_neighbor_weight_2,
+            'knn': self.__knn_weight,
+            'kde': self.__kde_weight
+        }
+        flow = []
+        for i in range(self.num_graph):
+            if i == 0:
+                flow.append([])
+            else:
+                flow.append([i + 1])
+        all_connect = []
+        for i in range(self.num_graph):
+            all_connect.append(list(range(self.num_graph)).remove(i))
+        connect_dict = {
+            'flow': flow,
+            'memory': [[j for j in range(i)] for i in range(self.num_graph)],
+            'all_connect': all_connect
+        }
         tensor = tl.tensor(np.zeros([self.num_nodes, self.num_nodes, self.num_graph, self.num_graph], dtype=np.float64))
+        geo_affect = geo_weight_dict[geo_weight]
         for node_0 in range(self.num_nodes):
             for node_1 in range(self.num_nodes):
                 for layer_0 in range(self.num_graph):
-                    for layer_1 in range(self.num_graph):
-                        if layer_0 == layer_1:
-                            if node_0 == node_1:
-                                continue
-                            else:
-                                tensor[node_0][node_1][layer_0][layer_1] = self._graph[layer_0][node_0][node_1]
-                        else:
-                            time_bin = abs(layer_0 - layer_1)
-                            geo_bin = 0
+                    if node_0 == node_1:
+                        tensor[node_0][node_1][layer_0][layer_0] = 0
+                    else:
+                        tensor[node_0][node_1][layer_0][layer_0] = self._graph[layer_0][node_0][node_1]
+                    for layer_1 in connect_dict[connect][layer_0]:
+                        time_affect = self.__logistic_func(layer_0 - layer_1)
+                        tensor[node_0][node_1][layer_0][layer_1] = time_affect * geo_affect[node_0][node_1]
         return tensor
 
     def community_detection_louvain(self, resolution=1., min_size=10):
@@ -539,8 +558,8 @@ class GeoMultiGraph:
                 table['community'].append(i)
         return pd.DataFrame.from_dict(table), len(r_list) - 1, len(un_list)
 
-    def __cal_topology_distance(self):
-        w = pysal.weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
+    def __queen_neighbor_weight(self):
+        w = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
         td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.int)
         for i in range(self.num_nodes):
             for j in range(i + 1, self.num_nodes):
@@ -549,8 +568,45 @@ class GeoMultiGraph:
                     td[j][i] = 1
         return td
 
-    def __cal_2d_distance(self):
-        pass
+    def __queen_neighbor_weight_2(self):
+        w = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
+        td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
+        for i in range(self.num_nodes):
+            for j in range(i + 1, self.num_nodes):
+                if j in w.neighbors[i]:
+                    td[i][j] = 1.
+                    td[j][i] = 1.
+                else:
+                    for k in w.neighbors[i]:
+                        if j in w.neighbors[k]:
+                            td[i][j] = 0.25
+                            td[j][i] = 0.25
+                            break
+        return td
+
+    def __knn_weight(self, k=6):
+        w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=k)
+        td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
+        for i in range(self.num_nodes):
+            for j in range(i + 1, self.num_nodes):
+                if j in w.neighbors[i]:
+                    td[i][j] = 1.
+                    td[j][i] = 1.
+        return td
+
+    def __kde_weight(self, bandwidth=None, function='gaussian'):
+        w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', bandwidth=bandwidth, function=function)
+        td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
+        for i in range(self.num_nodes):
+            for j in range(i + 1, self.num_nodes):
+                if j in w.neighbors[i]:
+                    td[i][j] = w.weights[i]
+                    td[j][i] = w.weights[i]
+        return td
+
+    @staticmethod
+    def __logistic_func(x):
+        return 1. - (1./(1. + pow(np.e, -1 * abs(x))))
 
 
 if __name__ == '__main__':
