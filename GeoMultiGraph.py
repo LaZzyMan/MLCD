@@ -546,6 +546,32 @@ class GeoMultiGraph:
         map_view.add_layer(layer)
         map_view.update()
 
+    def draw_multi_community_extrusion(self, map_view, communities, cmap=Spectral_10, title='Multi-Community-Extrusion'):
+        timestamp = int(time.time())
+        value_min = min([community['community'].min() for community in communities])
+        value_max = max([community['community'].max() for community in communities])
+        mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min)
+
+        def set_color(x):
+            rgba = mpl_colormap((x['community'] + value_min))
+            return rgb2hex(rgba[0], rgba[1], rgba[2])
+        for community, i in zip(communities, range(self.num_graph)):
+            geo_map = self._geo_mapping.merge(community, on='tazid')
+            geo_map = geo_map[['tazid', 'community', 'geometry']]
+            geo_map['color'] = geo_map.apply(set_color, axis=1)
+            geo_map.to_file('dist/data/%s_%d_%s.geojson' % (title, i, str(timestamp)), driver='GeoJSON')
+            source = GeojsonSource(id='%s_%d' % (title, i),
+                                   data='%s_%d_%s.geojson' % (title, i, str(timestamp)))
+            map_view.add_source(source)
+            layer = FillExtrusionLayer(id='%s_%d' % (title, i),
+                                       source='%s_%d' % (title, i),
+                                       p_fill_extrusion_opacity=0.3,
+                                       p_fill_extrusion_color=['get', 'color'],
+                                       p_fill_extrusion_height=30 * (i + 1),
+                                       p_fill_extrusion_base=30 * i)
+            map_view.add_layer(layer)
+            map_view.update()
+
     def __get_tazid(self, index):
         return self._geo_mapping['tazid'][index]
 
