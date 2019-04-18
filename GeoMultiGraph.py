@@ -283,7 +283,8 @@ class GeoMultiGraph:
         if generate_nx:
             self.__update_nx_graph()
 
-    def generate_tensor(self, geo_weight='queen', connect='flow'):
+    def generate_tensor(self, geo_weight='queen', connect='flow', **kwargs):
+        print('Generating tensor...')
         geo_weight_dict = {
             'queen': self.__queen_neighbor_weight,
             'queen2': self.__queen_neighbor_weight_2,
@@ -295,17 +296,18 @@ class GeoMultiGraph:
             if i == 0:
                 flow.append([])
             else:
-                flow.append([i + 1])
-        all_connect = []
+                flow.append([i - 1])
+        all_connect = [list(range(self.num_graph)) for _ in range(self.num_graph)]
         for i in range(self.num_graph):
-            all_connect.append(list(range(self.num_graph)).remove(i))
+            all_connect[i].remove(i)
         connect_dict = {
             'flow': flow,
             'memory': [[j for j in range(i)] for i in range(self.num_graph)],
-            'all_connect': all_connect
+            'all_connect': all_connect,
+            'none': [[] for _ in range(self.num_nodes)]
         }
         tensor = tl.tensor(np.zeros([self.num_nodes, self.num_nodes, self.num_graph, self.num_graph], dtype=np.float64))
-        geo_affect = geo_weight_dict[geo_weight]
+        geo_affect = geo_weight_dict[geo_weight]()
         for node_0 in range(self.num_nodes):
             for node_1 in range(self.num_nodes):
                 for layer_0 in range(self.num_graph):
@@ -316,6 +318,7 @@ class GeoMultiGraph:
                     for layer_1 in connect_dict[connect][layer_0]:
                         time_affect = self.__logistic_func(layer_0 - layer_1)
                         tensor[node_0][node_1][layer_0][layer_1] = time_affect * geo_affect[node_0][node_1]
+        print('Finished.')
         return tensor
 
     def community_detection_louvain(self, resolution=1., min_size=10):
@@ -369,8 +372,40 @@ class GeoMultiGraph:
             communities.append(community)
         return communities
 
-    def community_detection_multi_infomap(self):
-        pass
+    def community_detection_multi_infomap(self, geo_weight='queen', connect='flow'):
+        print('Multi-layer community detection by Infomap...')
+        table = {
+            'physical_id': [],
+            'layer_id': [],
+            'community': []
+        }
+        tensor = self.generate_tensor(geo_weight=geo_weight, connect=connect)
+        infomap_wrapper = infomap.Infomap('--two-level --directed --expanded')
+        network = infomap_wrapper.network()
+        for node_0 in range(self.num_nodes):
+            for node_1 in range(self.num_nodes):
+                for layer_0 in range(self.num_graph):
+                    for layer_1 in range(self.num_graph):
+                        weight = tensor[node_0][node_1][layer_0][layer_1]
+                        if not weight == 0:
+                            network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                            # if layer_0 == layer_1:
+                            #     network.addMultilayerIntraLink(layer_0, node_0, node_1, weight)
+                            # else:
+                            #     network.addMultilayerInterLink(layer_0, node_0, layer_1, node_1, weight)
+        infomap_wrapper.run()
+        print("Found %d top modules with codelength: %f" %
+              (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
+        for node in infomap_wrapper.iterTree():
+            if node.isLeaf():
+                table['physical_id'].append(self.__get_tazid(node.physicalId))
+                table['community'].append(node.moduleIndex())
+                table['layer_id'].append(node.layerId)
+        print(max(table['community']))
+        print(len(table['physical_id']))
+        df = pd.DataFrame.from_dict(table)
+        df['tazid'] = df.apply(lambda x: self.__get_tazid(x['physical_id'] % self.num_nodes), axis=1)
+        return df
 
     def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
         sns.set_style('ticks')
@@ -516,6 +551,9 @@ class GeoMultiGraph:
     def __get_tazid(self, index):
         return self._geo_mapping['tazid'][index]
 
+    def __get_index_by_tazid(self, tazid):
+        return self._geo_mapping[self._geo_mapping['tazid']==tazid].index.tolist()[0]
+
     def __update_nx_graph(self):
         G = []
         for l, time in zip(self._graph, self._network_list):
@@ -531,8 +569,7 @@ class GeoMultiGraph:
             G.append(g)
         self._nx_graph = G
 
-    @staticmethod
-    def __simplify_community(community, size=10):
+    def __simplify_community(self, community, size=10):
         c_list = {}
         r_list = []
         un_list = []
@@ -547,7 +584,9 @@ class GeoMultiGraph:
                     un_list.append(i)
             else:
                 r_list.append(item)
-        r_list.append(un_list)
+        for taz in self._geo_mapping['tazid']:
+            if taz not in community['tazid'].tolist():
+                un_list.append(taz)
         table = {
             'tazid': [],
             'community': []
@@ -556,6 +595,16 @@ class GeoMultiGraph:
             for k in r:
                 table['tazid'].append(k)
                 table['community'].append(i)
+        w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=len(un_list) + 1)
+        for i in un_list:
+            neighbors = w.neighbors[self.__get_index_by_tazid(i)]
+            neighbor_community = []
+            for neighbor in neighbors:
+                tazid = self.__get_tazid(neighbor)
+                if tazid not in un_list:
+                    neighbor_community.append(int(community[community['tazid'] == tazid]['community']))
+            table['tazid'].append(i)
+            table['community'].append(np.argmax(np.bincount(neighbor_community)))
         return pd.DataFrame.from_dict(table), len(r_list) - 1, len(un_list)
 
     def __queen_neighbor_weight(self):
@@ -595,13 +644,15 @@ class GeoMultiGraph:
         return td
 
     def __kde_weight(self, bandwidth=None, function='gaussian'):
-        w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', bandwidth=bandwidth, function=function)
+        w = weights.Kernel.from_dataframe(self._geo_mapping, geom_col='geometry', bandwidth=bandwidth, function=function)
         td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
         for i in range(self.num_nodes):
-            for j in range(i + 1, self.num_nodes):
+            td[i][i] = 1.
+        for i in range(self.num_nodes):
+            for j in range(i, self.num_nodes):
                 if j in w.neighbors[i]:
-                    td[i][j] = w.weights[i]
-                    td[j][i] = w.weights[i]
+                    td[i][j] = w.weights[i][w.neighbors[i].index(j)]
+                    td[j][i] = w.weights[i][w.neighbors[i].index(j)]
         return td
 
     @staticmethod

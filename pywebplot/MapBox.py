@@ -1,5 +1,6 @@
 import json
 from pywebplot import *
+import time
 
 
 class Layer(object):
@@ -217,6 +218,7 @@ class Event(object):
 
 class MapBox(object):
     def __init__(self, viewport, pk, style, name='map', lon=116.37363, lat=39.915606, pitch=0, bearing=0, zoom=0):
+        timestamp = str(int(time.time()))
         self._name = name
         self._viewport = viewport
         self._style = style
@@ -228,8 +230,8 @@ class MapBox(object):
         self._source = {}
         self._layer = {}
         self._event = []
-        self._dir_js = 'dist/js/%s.js' % self._name
-        self._viewport.plv.add_js('%s.js' % self._name)
+        self._dir_js = 'dist/js/%s.js' % (self._name + timestamp)
+        self._viewport.plv.add_js('%s.js' % (self._name + timestamp))
 
     @property
     def style(self):
