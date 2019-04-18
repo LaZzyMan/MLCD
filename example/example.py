@@ -5,7 +5,7 @@ from palettable.colorbrewer.sequential import Reds_9, GnBu_9, BuPu_9, Blues_9
 
 
 if __name__ == '__main__':
-    WEB_SERVER.run()
+    # WEB_SERVER.run()
     mkdir()
     gmg = GeoMultiGraph()
     gmg.load('../src/data/GeoMultiGraph_week', network_list=['2012', '2013', '2014', '2015', '2016', '2017'], generate_nx=True)

@@ -375,7 +375,7 @@ class GeoMultiGraph:
     def community_detection_multi_infomap(self, geo_weight='queen', connect='flow'):
         print('Multi-layer community detection by Infomap...')
         table = {
-            'physical_id': [],
+            'tazid': [],
             'layer_id': [],
             'community': []
         }
@@ -390,21 +390,19 @@ class GeoMultiGraph:
                         if not weight == 0:
                             network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
                             # if layer_0 == layer_1:
-                            #     network.addMultilayerIntraLink(layer_0, node_0, node_1, weight)
+                            #     network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
                             # else:
-                            #     network.addMultilayerInterLink(layer_0, node_0, layer_1, node_1, weight)
+                            #     if node_0 == node_1:
+                            #         network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
         infomap_wrapper.run()
         print("Found %d top modules with codelength: %f" %
               (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
         for node in infomap_wrapper.iterTree():
             if node.isLeaf():
-                table['physical_id'].append(self.__get_tazid(node.physicalId))
+                table['tazid'].append(self.__get_tazid(node.physicalId))
                 table['community'].append(node.moduleIndex())
                 table['layer_id'].append(node.layerId)
-        print(max(table['community']))
-        print(len(table['physical_id']))
         df = pd.DataFrame.from_dict(table)
-        df['tazid'] = df.apply(lambda x: self.__get_tazid(x['physical_id'] % self.num_nodes), axis=1)
         return df
 
     def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
@@ -611,6 +609,8 @@ class GeoMultiGraph:
         w = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
         td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.int)
         for i in range(self.num_nodes):
+            td[i][i] = 1.
+        for i in range(self.num_nodes):
             for j in range(i + 1, self.num_nodes):
                 if j in w.neighbors[i]:
                     td[i][j] = 1
@@ -620,6 +620,8 @@ class GeoMultiGraph:
     def __queen_neighbor_weight_2(self):
         w = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
         td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
+        for i in range(self.num_nodes):
+            td[i][i] = 1.
         for i in range(self.num_nodes):
             for j in range(i + 1, self.num_nodes):
                 if j in w.neighbors[i]:
@@ -636,6 +638,8 @@ class GeoMultiGraph:
     def __knn_weight(self, k=6):
         w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=k)
         td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
+        for i in range(self.num_nodes):
+            td[i][i] = 1.
         for i in range(self.num_nodes):
             for j in range(i + 1, self.num_nodes):
                 if j in w.neighbors[i]:
