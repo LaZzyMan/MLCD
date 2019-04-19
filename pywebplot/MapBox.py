@@ -234,6 +234,10 @@ class MapBox(object):
         self._viewport.plv.add_js('%s.js' % (self._name + timestamp))
 
     @property
+    def viewport(self):
+        return self._viewport
+
+    @property
     def style(self):
         return self._style
 

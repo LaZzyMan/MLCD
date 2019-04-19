@@ -388,12 +388,12 @@ class GeoMultiGraph:
                     for layer_1 in range(self.num_graph):
                         weight = tensor[node_0][node_1][layer_0][layer_1]
                         if not weight == 0:
-                            network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                            # if layer_0 == layer_1:
-                            #     network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                            # else:
-                            #     if node_0 == node_1:
-                            #         network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                            # network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                            if layer_0 == layer_1:
+                                network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                            else:
+                                if node_0 == node_1:
+                                    network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
         infomap_wrapper.run()
         print("Found %d top modules with codelength: %f" %
               (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
@@ -472,6 +472,7 @@ class GeoMultiGraph:
         map_view.update()
 
     def draw_multi_scale_community(self, community, cmap=Spectral_10, column=2, row=3, inline=False, title='Geo-Multi-Graph'):
+        community, _, _ = [self.__simplify_community(i, size=10) for i in community]
         view = PlotView(column_num=row, row_num=column, title=title)
         for subview, i in zip(view, range(self.num_graph)):
             subview.name = self._network_list[i]
@@ -537,38 +538,46 @@ class GeoMultiGraph:
         map_view.update()
         print('Finished.')
 
-    def draw_taz(self, map_view, color='#3BA1C3', fill_opacity=0.3):
+    def draw_taz(self, map_view, fill_color='white', fill_opacity=0.3, fill_outline_color='white'):
         taz_unit_df = self._geo_mapping['geometry']
         taz_unit_df.to_file('dist/data/taz.geojson', driver='GeoJSON')
         source = GeojsonSource(id='taz', data='taz.geojson')
         map_view.add_source(source)
-        layer = FillLayer(id='taz', source='taz', p_fill_opacity=fill_opacity, p_fill_color=color)
+        layer = FillLayer(id='taz',
+                          source='taz',
+                          p_fill_opacity=fill_opacity,
+                          p_fill_color=fill_color,
+                          p_fill_outline_color=fill_outline_color)
         map_view.add_layer(layer)
         map_view.update()
 
-    def draw_multi_community_extrusion(self, map_view, communities, cmap=Spectral_10, title='Multi-Community-Extrusion'):
+    def draw_multi_community_extrusion(self, map_view, data, cmap=Spectral_10, title='Multi-Community-Extrusion'):
+        communities, _, _ = [self.__simplify_community(i, size=10) for i in data]
         timestamp = int(time.time())
         value_min = min([community['community'].min() for community in communities])
         value_max = max([community['community'].max() for community in communities])
-        mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min)
+        mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min + 1)
 
         def set_color(x):
-            rgba = mpl_colormap((x['community'] + value_min))
+            rgba = mpl_colormap((x + value_min))
             return rgb2hex(rgba[0], rgba[1], rgba[2])
+        _ = Legend(view=map_view.viewport,
+                        colors=[('Community_%d' % i, set_color(i)) for i in range(value_min, value_max + 1)],
+                        title='Community Detection')
         for community, i in zip(communities, range(self.num_graph)):
             geo_map = self._geo_mapping.merge(community, on='tazid')
             geo_map = geo_map[['tazid', 'community', 'geometry']]
-            geo_map['color'] = geo_map.apply(set_color, axis=1)
+            geo_map['color'] = geo_map.apply(lambda x: set_color(x['community']), axis=1)
             geo_map.to_file('dist/data/%s_%d_%s.geojson' % (title, i, str(timestamp)), driver='GeoJSON')
-            source = GeojsonSource(id='%s_%d' % (title, i),
+            source = GeojsonSource(id='%s%d' % (title, i),
                                    data='%s_%d_%s.geojson' % (title, i, str(timestamp)))
             map_view.add_source(source)
-            layer = FillExtrusionLayer(id='%s_%d' % (title, i),
-                                       source='%s_%d' % (title, i),
+            layer = FillExtrusionLayer(id='%s%d' % (title, i),
+                                       source='%s%d' % (title, i),
                                        p_fill_extrusion_opacity=0.3,
                                        p_fill_extrusion_color=['get', 'color'],
-                                       p_fill_extrusion_height=30 * (i + 1),
-                                       p_fill_extrusion_base=30 * i)
+                                       p_fill_extrusion_height=1000 * (i + 1),
+                                       p_fill_extrusion_base=1000 * i)
             map_view.add_layer(layer)
             map_view.update()
 

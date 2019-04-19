@@ -5,6 +5,35 @@ from jinja2 import Template
 from IPython.display import HTML
 
 
+class Component(object):
+    def __init__(self, view):
+        view.add_component(self)
+
+    @property
+    def dom(self):
+        return ''
+
+
+class Legend(Component):
+    def __init__(self, view, title, colors):
+        super().__init__(view)
+        self._colors = colors
+        self._title = title
+
+    @property
+    def dom(self):
+        html = '''
+        <div id='state-legend' class='legend'>
+        <h4>{{ title }}</h4>
+        {% for color in colors %}
+        <div><span style='background-color: {{ color[1] }}'></span>{{ color[0] }}</div>
+        {% endfor %}
+        </div>
+        '''
+        template = Template(html)
+        return template.render(title=self._title, colors=self._colors)
+
+
 class PlotView(object):
     def __init__(self, column_num=1, row_num=1, title='index'):
         '''
@@ -115,17 +144,26 @@ class SubView(object):
         self._height = height
         self._name = name
         self._plv = plv
+        self._component = []
 
     @property
     def dom(self):
-        return '''
-        <div class="sub-view" style="width: 100%%; height: %f%%">
-            <div class="sub-view-content" id="%s" style="width: %fvw; height: %fvh"></div>
+        html = '''
+        <div class="sub-view" style="width: 100%; height: {{ height }}%">
+            <div class="sub-view-content" id="{{ name }}" style="width: {{ width }}vw; height: {{ height }}vh"></div>
             <div class="sub-view-title">
-                <span>%s</span>
+                <span>{{ name }}</span>
             </div>
+            {% for dom in doms %}
+            {{ dom }}
+            {% endfor %}
         </div>
-        ''' % (self._height, self._name, self._width, self._height, self.name)
+        '''
+        template = Template(html)
+        return template.render(name=self.name,
+                               width=self._width,
+                               height=self._height,
+                               doms=[i.dom for i in self._component])
 
     @property
     def name(self):
@@ -139,3 +177,6 @@ class SubView(object):
     def name(self, value):
         if isinstance(value, str):
             self._name = value
+
+    def add_component(self, component):
+        self._component.append(component)
