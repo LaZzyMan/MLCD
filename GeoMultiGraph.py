@@ -53,7 +53,7 @@ def get_cluster_coefficient(g):
 
 
 class GeoMultiGraph:
-    def __init__(self, geo_mapping=None, graph=None, network_list=None):
+    def __init__(self, geo_mapping=None, graph=None, network_list=None, generate_nx=False):
         self._geo_mapping = geo_mapping
         self._root_graph = graph
         self._graph = graph
@@ -66,6 +66,8 @@ class GeoMultiGraph:
             self._num_graph = len(graph)
         self._nx_graph = None
         mkdir()
+        if generate_nx:
+            self.__update_nx_graph()
 
     def save(self, file_name):
         self._geo_mapping.to_file(file_name + '.geojson', driver='GeoJSON')
@@ -90,6 +92,17 @@ class GeoMultiGraph:
         '''
         self._graph = self._root_graph
         self.__update_nx_graph()
+
+    def sub_graph(self, nodes):
+        geo_mapping = self._geo_mapping[self._geo_mapping['tazid'] in nodes].copy()
+        graph = np.zeros((self.num_graph, len(nodes), len(nodes)), dtype=np.int)
+        for layer in range(self.num_graph):
+            for i in range(len(nodes)):
+                for j in range(len(nodes)):
+                    node_0 = self.__get_index_by_tazid(nodes[i])
+                    node_1 = self.__get_index_by_tazid(nodes[j])
+                    graph[layer][i][j] = self._graph[layer][node_0][node_1]
+        return GeoMultiGraph(geo_mapping=geo_mapping, graph=graph, network_list=self._network_list, generate_nx=True)
 
     @property
     def nx_graph(self):
@@ -289,7 +302,8 @@ class GeoMultiGraph:
             'queen': self.__queen_neighbor_weight,
             'queen2': self.__queen_neighbor_weight_2,
             'knn': self.__knn_weight,
-            'kde': self.__kde_weight
+            'kde': self.__kde_weight,
+            'none': lambda: np.eye(self.num_nodes, dtype=np.float)
         }
         flow = []
         for i in range(self.num_graph):
@@ -380,7 +394,10 @@ class GeoMultiGraph:
             'community': []
         }
         tensor = self.generate_tensor(geo_weight=geo_weight, connect=connect)
-        infomap_wrapper = infomap.Infomap('--two-level --directed --expanded')
+        if geo_weight == 'none' and connect=='none':
+            infomap_wrapper = infomap.Infomap('--directed --multilayer-relax-rate 0.3 --multilayer-relax-limit 1')
+        else:
+            infomap_wrapper = infomap.Infomap('--directed')
         network = infomap_wrapper.network()
         for node_0 in range(self.num_nodes):
             for node_1 in range(self.num_nodes):
@@ -388,12 +405,12 @@ class GeoMultiGraph:
                     for layer_1 in range(self.num_graph):
                         weight = tensor[node_0][node_1][layer_0][layer_1]
                         if not weight == 0:
-                            # network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                            if layer_0 == layer_1:
-                                network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                            else:
-                                if node_0 == node_1:
-                                    network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                            network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                            # if layer_0 == layer_1:
+                            #     network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                            # else:
+                            #     if node_0 == node_1:
+                            #         network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
         infomap_wrapper.run()
         print("Found %d top modules with codelength: %f" %
               (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
@@ -403,7 +420,8 @@ class GeoMultiGraph:
                 table['community'].append(node.moduleIndex())
                 table['layer_id'].append(node.layerId)
         df = pd.DataFrame.from_dict(table)
-        return df
+        community = [self.__simplify_community(i, size=10)[0] for i in [df[df['layer_id'] == i] for i in range(self.num_graph)]]
+        return community
 
     def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
         sns.set_style('ticks')
@@ -472,7 +490,6 @@ class GeoMultiGraph:
         map_view.update()
 
     def draw_multi_scale_community(self, community, cmap=Spectral_10, column=2, row=3, inline=False, title='Geo-Multi-Graph'):
-        community, _, _ = [self.__simplify_community(i, size=10) for i in community]
         view = PlotView(column_num=row, row_num=column, title=title)
         for subview, i in zip(view, range(self.num_graph)):
             subview.name = self._network_list[i]
@@ -551,8 +568,7 @@ class GeoMultiGraph:
         map_view.add_layer(layer)
         map_view.update()
 
-    def draw_multi_community_extrusion(self, map_view, data, cmap=Spectral_10, title='Multi-Community-Extrusion'):
-        communities, _, _ = [self.__simplify_community(i, size=10) for i in data]
+    def draw_multi_community_extrusion(self, map_view, communities, cmap=Spectral_10, title='Multi-Community-Extrusion'):
         timestamp = int(time.time())
         value_min = min([community['community'].min() for community in communities])
         value_max = max([community['community'].max() for community in communities])
@@ -628,7 +644,7 @@ class GeoMultiGraph:
             for k in r:
                 table['tazid'].append(k)
                 table['community'].append(i)
-        w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=len(un_list) + 1)
+        w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=30)
         for i in un_list:
             neighbors = w.neighbors[self.__get_index_by_tazid(i)]
             neighbor_community = []

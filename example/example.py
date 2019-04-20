@@ -14,10 +14,10 @@ if __name__ == '__main__':
     # mc = gmg.community_detection_multi_infomap(geo_weight='queen', connect='flow')
     # gmg.draw_multi_scale_community(community=[mc[mc['layer_id'] == i] for i in range(6)], cmap=Pastel_10, inline=True,
     #                                title='queen-flow')
-    mc = gmg.community_detection_multi_infomap(geo_weight='queen', connect='memory')
-    gmg.draw_multi_scale_community(community=[mc[mc['layer_id'] == i] for i in range(6)], cmap=Pastel_10, inline=True, title='queen-memory')
-    plt = PlotView(column_num=1, row_num=1, title='extrusion-queen-memory')
-    plt[0].name = 'queen-memory'
+    mc = gmg.community_detection_multi_infomap(geo_weight='none', connect='none')
+    gmg.draw_multi_scale_community(community=mc, cmap=Pastel_10, inline=True, title='none-none')
+    plt = PlotView(column_num=1, row_num=1, title='extrusion-none-none')
+    plt[0].name = 'none-none'
     map = MapBox(name='map_infomap',
                  pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
                  lon=116.37363,
@@ -29,9 +29,9 @@ if __name__ == '__main__':
                  viewport=plt[0])
     gmg.draw_taz(map_view=map)
     gmg.draw_multi_community_extrusion(map_view=map,
-                                       data=[mc[mc['layer_id'] == i] for i in range(6)],
+                                       communities=mc,
                                        cmap=Pastel_10,
-                                       title='qm')
+                                       title='nn')
     plt.plot(inline=True)
     # mc = gmg.community_detection_multi_infomap(geo_weight='queen', connect='all_connect')
     # gmg.draw_multi_scale_community(community=[mc[mc['layer_id'] == i] for i in range(6)], cmap=Pastel_10, inline=True,
