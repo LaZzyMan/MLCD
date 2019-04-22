@@ -5,19 +5,35 @@ from palettable.colorbrewer.sequential import Reds_9, GnBu_9, BuPu_9, Blues_9
 
 
 if __name__ == '__main__':
-    # WEB_SERVER.run()
+    WEB_SERVER.run()
     mkdir()
     gmg = GeoMultiGraph()
     gmg.load('../src/data/GeoMultiGraph_week', network_list=['2012', '2013', '2014', '2015', '2016', '2017'], generate_nx=True)
-    # mc = gmg.community_detection_multi_infomap(connect='none')
-    # gmg.draw_multi_scale_community(community=[mc[mc['layer_id'] == i] for i in range(6)], cmap=Set3_12, inline=False, title='Multi-Infomap')
-    # mc = gmg.community_detection_multi_infomap(geo_weight='queen', connect='flow')
-    # gmg.draw_multi_scale_community(community=[mc[mc['layer_id'] == i] for i in range(6)], cmap=Pastel_10, inline=True,
-    #                                title='queen-flow')
-    mc = gmg.community_detection_multi_infomap(geo_weight='none', connect='none')
-    gmg.draw_multi_scale_community(community=mc, cmap=Pastel_10, inline=True, title='none-none')
-    plt = PlotView(column_num=1, row_num=1, title='extrusion-none-none')
-    plt[0].name = 'none-none'
+    # gc = gmg.local_community_detection_infomap(geo_weight='kde', min_size=10)
+    # plt = PlotView(column_num=1, row_num=1, title='gc')
+    # plt[0].name = 'gc'
+    # map = MapBox(name='map_gc',
+    #              pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
+    #              lon=116.37363,
+    #              lat=39.915606,
+    #              style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
+    #              pitch=55,
+    #              bearing=0,
+    #              zoom=12,
+    #              viewport=plt[0])
+    # gmg.draw_choropleth_map(map_view=map, data=gc, value='community', title='gc', cmap=Antique_10)
+    # plt.plot(inline=True)
+    mc = gmg.community_detection_multi_infomap(geo_weight='none', connect='none', only_self_transition=False)
+    # mmc = merge_layers(mc)
+    # sub_graphs = [gmg.sub_graph(mmc[mmc['community'] == i]['tazid'].unique()) for i in mmc['community'].unique()]
+    # for i in range(len(sub_graphs)):
+    #     # smc = sub_graphs[0].community_detection_infomap(min_size=10)
+    #     # smc = sub_graphs[i].community_detection_multi_infomap(geo_weight='kde', connect='memory', only_self_transition=False)
+    #     smc = sub_graphs[0].community_detection_louvain(resolution=1., min_size=10)
+    #     sub_graphs[i].draw_multi_scale_community(community=smc, cmap=Pastel_10, inline=True, title='s%d-kde-memory-louvain' % i)
+    gmg.draw_multi_scale_community(community=mc, cmap=Pastel_10, inline=True, title='none-none-r0')
+    plt = PlotView(column_num=1, row_num=1, title='extrusion-kde-memory')
+    plt[0].name = 'none-none-r0'
     map = MapBox(name='map_infomap',
                  pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
                  lon=116.37363,
@@ -31,7 +47,7 @@ if __name__ == '__main__':
     gmg.draw_multi_community_extrusion(map_view=map,
                                        communities=mc,
                                        cmap=Pastel_10,
-                                       title='nn')
+                                       title='nnr0')
     plt.plot(inline=True)
     # mc = gmg.community_detection_multi_infomap(geo_weight='queen', connect='all_connect')
     # gmg.draw_multi_scale_community(community=[mc[mc['layer_id'] == i] for i in range(6)], cmap=Pastel_10, inline=True,

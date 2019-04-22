@@ -52,6 +52,18 @@ def get_cluster_coefficient(g):
     return pd.DataFrame.from_dict(table)
 
 
+def merge_layers(mc):
+    table = {
+        'tazid': [],
+        'community': []
+    }
+    for taz in mc[0]['tazid'].unique():
+        table['tazid'].append(taz)
+        m = np.argmax(np.bincount([int(c[c['tazid'] == taz]['community']) for c in mc]))
+        table['community'].append(m)
+    return pd.DataFrame.from_dict(table)
+
+
 class GeoMultiGraph:
     def __init__(self, geo_mapping=None, graph=None, network_list=None, generate_nx=False):
         self._geo_mapping = geo_mapping
@@ -94,15 +106,17 @@ class GeoMultiGraph:
         self.__update_nx_graph()
 
     def sub_graph(self, nodes):
-        geo_mapping = self._geo_mapping[self._geo_mapping['tazid'] in nodes].copy()
+        nodes = sorted(nodes)
+        geo_mapping = self._geo_mapping[self._geo_mapping['tazid'].isin(nodes)].copy()
+        geo_mapping = geo_mapping.reset_index(drop=True)
         graph = np.zeros((self.num_graph, len(nodes), len(nodes)), dtype=np.int)
+        index_nodes = [self.__get_index_by_tazid(node) for node in nodes]
         for layer in range(self.num_graph):
             for i in range(len(nodes)):
                 for j in range(len(nodes)):
-                    node_0 = self.__get_index_by_tazid(nodes[i])
-                    node_1 = self.__get_index_by_tazid(nodes[j])
-                    graph[layer][i][j] = self._graph[layer][node_0][node_1]
-        return GeoMultiGraph(geo_mapping=geo_mapping, graph=graph, network_list=self._network_list, generate_nx=True)
+                    graph[layer][i][j] = self._graph[layer][index_nodes[i]][index_nodes[j]]
+        g = GeoMultiGraph(geo_mapping=geo_mapping, graph=graph, network_list=self._network_list, generate_nx=True)
+        return g
 
     @property
     def nx_graph(self):
@@ -296,8 +310,7 @@ class GeoMultiGraph:
         if generate_nx:
             self.__update_nx_graph()
 
-    def generate_tensor(self, geo_weight='queen', connect='flow', **kwargs):
-        print('Generating tensor...')
+    def get_local_relation(self, geo_weight='queen', **kwargs):
         geo_weight_dict = {
             'queen': self.__queen_neighbor_weight,
             'queen2': self.__queen_neighbor_weight_2,
@@ -305,6 +318,10 @@ class GeoMultiGraph:
             'kde': self.__kde_weight,
             'none': lambda: np.eye(self.num_nodes, dtype=np.float)
         }
+        return geo_weight_dict[geo_weight]()
+
+    def generate_tensor(self, geo_weight='queen', connect='flow', **kwargs):
+        print('Generating tensor...')
         flow = []
         for i in range(self.num_graph):
             if i == 0:
@@ -321,12 +338,12 @@ class GeoMultiGraph:
             'none': [[] for _ in range(self.num_nodes)]
         }
         tensor = tl.tensor(np.zeros([self.num_nodes, self.num_nodes, self.num_graph, self.num_graph], dtype=np.float64))
-        geo_affect = geo_weight_dict[geo_weight]()
+        geo_affect = self.get_local_relation(geo_weight)
         for node_0 in range(self.num_nodes):
             for node_1 in range(self.num_nodes):
                 for layer_0 in range(self.num_graph):
                     if node_0 == node_1:
-                        tensor[node_0][node_1][layer_0][layer_0] = 0
+                        tensor[node_0][node_1][layer_0][layer_0] = 1.
                     else:
                         tensor[node_0][node_1][layer_0][layer_0] = self._graph[layer_0][node_0][node_1]
                     for layer_1 in connect_dict[connect][layer_0]:
@@ -334,6 +351,31 @@ class GeoMultiGraph:
                         tensor[node_0][node_1][layer_0][layer_1] = time_affect * geo_affect[node_0][node_1]
         print('Finished.')
         return tensor
+
+    def local_community_detection_infomap(self, geo_weight='kde', min_size=10):
+        table = {
+            'tazid': [],
+            'community': []
+        }
+        infomap_wrapper = infomap.Infomap('--two-level --directed')
+        network = infomap_wrapper.network()
+        w = self.get_local_relation(geo_weight)
+        for i in range(self.num_nodes):
+            for j in range(self.num_nodes):
+                if not w[i][j] == 0:
+                    network.addLink(i, j, w[i][j])
+        infomap_wrapper.run()
+        print("Found %d top modules with codelength: %f" %
+              (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
+        for node in infomap_wrapper.iterTree():
+            if node.isLeaf():
+                table['tazid'].append(self.__get_tazid(node.physicalId))
+                table['community'].append(node.moduleIndex())
+        community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table),
+                                                                             size=min_size)
+        print('%d communities found, %d point unclassified.'
+              % (num_community, num_unclassify))
+        return community
 
     def community_detection_louvain(self, resolution=1., min_size=10):
         def louvain(g):
@@ -362,7 +404,7 @@ class GeoMultiGraph:
                 'tazid': [],
                 'community': []
             }
-            infomap_wrapper = infomap.Infomap('--two-level --directed')
+            infomap_wrapper = infomap.Infomap('--directed')
             network = infomap_wrapper.network()
             for i in range(self.num_nodes):
                 for j in range(self.num_nodes):
@@ -386,7 +428,7 @@ class GeoMultiGraph:
             communities.append(community)
         return communities
 
-    def community_detection_multi_infomap(self, geo_weight='queen', connect='flow'):
+    def community_detection_multi_infomap(self, geo_weight='queen', connect='flow', only_self_transition=False):
         print('Multi-layer community detection by Infomap...')
         table = {
             'tazid': [],
@@ -394,23 +436,42 @@ class GeoMultiGraph:
             'community': []
         }
         tensor = self.generate_tensor(geo_weight=geo_weight, connect=connect)
-        if geo_weight == 'none' and connect=='none':
-            infomap_wrapper = infomap.Infomap('--directed --multilayer-relax-rate 0.3 --multilayer-relax-limit 1')
+        if geo_weight == 'none' and connect == 'none':
+            infomap_wrapper = infomap.Infomap('--two-level --directed')
         else:
-            infomap_wrapper = infomap.Infomap('--directed')
+            infomap_wrapper = infomap.Infomap('--two-level --directed --multilayer-relax-rate 0 --multilayer-relax-limit 1')
         network = infomap_wrapper.network()
-        for node_0 in range(self.num_nodes):
-            for node_1 in range(self.num_nodes):
-                for layer_0 in range(self.num_graph):
-                    for layer_1 in range(self.num_graph):
-                        weight = tensor[node_0][node_1][layer_0][layer_1]
-                        if not weight == 0:
-                            network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                            # if layer_0 == layer_1:
-                            #     network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                            # else:
-                            #     if node_0 == node_1:
-                            #         network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+        if not only_self_transition:
+            for node_0 in range(self.num_nodes):
+                for node_1 in range(self.num_nodes):
+                    for layer_0 in range(self.num_graph):
+                        for layer_1 in range(self.num_graph):
+                            weight = tensor[node_0][node_1][layer_0][layer_1]
+                            if not weight == 0:
+                                network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                                # if layer_0 == layer_1:
+                                #     network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+                                # else:
+                                #     if node_0 == node_1:
+                                #         network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+        else:
+            for node_0 in range(self.num_nodes):
+                for node_1 in range(self.num_nodes):
+                    for layer_0 in range(self.num_graph):
+                        for layer_1 in range(self.num_graph):
+                            if node_0 == node_1:
+                                weight = tensor[node_0][node_1][layer_0][layer_1]
+                                if not weight == 0:
+                                    network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
+            w = self.get_local_relation(geo_weight)
+            for node_0 in range(self.num_nodes):
+                for node_1 in range(self.num_nodes):
+                    if not w[node_0][node_1] == 0:
+                        network.addMultilayerLink(self.num_graph, node_0, self.num_graph, node_1, w[node_0][node_1])
+            for node in range(self.num_nodes):
+                for layer in range(self.num_graph):
+                    network.addMultilayerLink(self.num_graph, node, layer, node, 0.1)
+                    network.addMultilayerLink(layer, node, self.num_graph, node, 0.1)
         infomap_wrapper.run()
         print("Found %d top modules with codelength: %f" %
               (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
@@ -474,7 +535,10 @@ class GeoMultiGraph:
         timestamp = int(time.time())
         value_min = data[value].min()
         value_max = data[value].max()
-        mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min)
+        if not value_min == value_max:
+            mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min + 1)
+        else:
+            mpl_colormap = cmap.mpl_colormap
 
         def set_color(x):
             rgba = mpl_colormap((x[value] + value_min))
@@ -601,7 +665,7 @@ class GeoMultiGraph:
         return self._geo_mapping['tazid'][index]
 
     def __get_index_by_tazid(self, tazid):
-        return self._geo_mapping[self._geo_mapping['tazid']==tazid].index.tolist()[0]
+        return self._geo_mapping[self._geo_mapping['tazid'] == tazid].index.tolist()[0]
 
     def __update_nx_graph(self):
         G = []
@@ -644,6 +708,7 @@ class GeoMultiGraph:
             for k in r:
                 table['tazid'].append(k)
                 table['community'].append(i)
+        # classify single points by knn
         w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=30)
         for i in un_list:
             neighbors = w.neighbors[self.__get_index_by_tazid(i)]
@@ -654,6 +719,7 @@ class GeoMultiGraph:
                     neighbor_community.append(int(community[community['tazid'] == tazid]['community']))
             table['tazid'].append(i)
             table['community'].append(np.argmax(np.bincount(neighbor_community)))
+        # queen = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
         return pd.DataFrame.from_dict(table), len(r_list) - 1, len(un_list)
 
     def __queen_neighbor_weight(self):
@@ -664,8 +730,8 @@ class GeoMultiGraph:
         for i in range(self.num_nodes):
             for j in range(i + 1, self.num_nodes):
                 if j in w.neighbors[i]:
-                    td[i][j] = 1
-                    td[j][i] = 1
+                    td[i][j] = 0.5
+                    td[j][i] = 0.5
         return td
 
     def __queen_neighbor_weight_2(self):
@@ -676,13 +742,13 @@ class GeoMultiGraph:
         for i in range(self.num_nodes):
             for j in range(i + 1, self.num_nodes):
                 if j in w.neighbors[i]:
-                    td[i][j] = 1.
-                    td[j][i] = 1.
+                    td[i][j] = .5
+                    td[j][i] = .5
                 else:
                     for k in w.neighbors[i]:
                         if j in w.neighbors[k]:
-                            td[i][j] = 0.25
-                            td[j][i] = 0.25
+                            td[i][j] = 0.2
+                            td[j][i] = 0.2
                             break
         return td
 
@@ -694,8 +760,8 @@ class GeoMultiGraph:
         for i in range(self.num_nodes):
             for j in range(i + 1, self.num_nodes):
                 if j in w.neighbors[i]:
-                    td[i][j] = 1.
-                    td[j][i] = 1.
+                    td[i][j] = 0.5
+                    td[j][i] = 0.5
         return td
 
     def __kde_weight(self, bandwidth=None, function='gaussian'):
