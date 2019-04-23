@@ -428,55 +428,61 @@ class GeoMultiGraph:
                 communities.append(pd.DataFrame.from_dict(community))
         return communities
 
+    def louvain(self, g, resolution=1., min_size=10):
+        table = {
+            'tazid': [],
+            'community': []
+        }
+        print('Louvain for network %s...' % g.graph['date'])
+        g = nx.Graph(g)
+        p = best_partition(g, weight='weight', resolution=resolution)
+        print('Network %s Modularity: %f.' % (g.graph['date'], modularity(p, g, weight='weight')))
+        for key, item in p.items():
+            table['tazid'].append(self.__get_tazid(key))
+            table['community'].append(item)
+        community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table),
+                                                                             size=min_size)
+        print('Finished %s, %d communities found, %d point unclassified.'
+              % (g.graph['date'], num_community, num_unclassify))
+        return community
+
     def community_detection_louvain(self, resolution=1., min_size=10):
-        def louvain(g):
-            table = {
-                'tazid': [],
-                'community': []
-            }
-            print('Louvain for network %s...' % g.graph['date'])
-            g = nx.Graph(g)
-            p = best_partition(g, weight='weight', resolution=resolution)
-            print('Network %s Modularity: %f.' % (g.graph['date'], modularity(p, g, weight='weight')))
-            for key, item in p.items():
-                table['tazid'].append(self.__get_tazid(key))
-                table['community'].append(item)
-            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
-            print('Finished %s, %d communities found, %d point unclassified.'
-                  % (g.graph['date'], num_community, num_unclassify))
-            return community
-        df_partition = map(louvain, self.nx_graph)
-        return list(df_partition)
+        df_partition = [self.louvain(g, resolution, min_size) for g in self.nx_graph]
+        return df_partition
+
+    def info_map(self, g, min_size=10):
+        table = {
+            'tazid': [],
+            'community': []
+        }
+        infomap_wrapper = infomap.Infomap('--two-level --directed')
+        network = infomap_wrapper.network()
+        for i in range(self.num_nodes):
+            for j in range(self.num_nodes):
+                try:
+                    weight = g.adj[i][j]['weight']
+                    if weight == 0:
+                        continue
+                    network.addLink(i, j, float(weight))
+                except KeyError:
+                    continue
+        infomap_wrapper.run()
+        print("Found %d top modules with codelength: %f" %
+              (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
+        for node in infomap_wrapper.iterTree():
+            if node.isLeaf():
+                table['tazid'].append(self.__get_tazid(node.physicalId))
+                table['community'].append(node.moduleIndex())
+        community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table),
+                                                                             size=min_size)
+        print('Finished %s, %d communities found, %d point unclassified.'
+              % (g.graph['date'], num_community, num_unclassify))
+        return community
 
     def community_detection_infomap(self, min_size=10):
         communities = []
         for g in self.nx_graph:
-            table = {
-                'tazid': [],
-                'community': []
-            }
-            infomap_wrapper = infomap.Infomap('--directed')
-            network = infomap_wrapper.network()
-            for i in range(self.num_nodes):
-                for j in range(self.num_nodes):
-                    try:
-                        weight = g.adj[i][j]['weight']
-                        if weight == 0:
-                            continue
-                        network.addLink(i, j, float(weight))
-                    except KeyError:
-                        continue
-            infomap_wrapper.run()
-            print("Found %d top modules with codelength: %f" %
-                  (infomap_wrapper.numTopModules(), infomap_wrapper.codelength()))
-            for node in infomap_wrapper.iterTree():
-                if node.isLeaf():
-                    table['tazid'].append(self.__get_tazid(node.physicalId))
-                    table['community'].append(node.moduleIndex())
-            community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
-            print('Finished %s, %d communities found, %d point unclassified.'
-                  % (g.graph['date'], num_community, num_unclassify))
-            communities.append(community)
+            communities.append(self.info_map(g, min_size))
         return communities
 
     def community_detection_multi_infomap(self, geo_weight='queen', connect='flow', only_self_transition=False):
@@ -534,6 +540,20 @@ class GeoMultiGraph:
         df = pd.DataFrame.from_dict(table)
         community = [self.__simplify_community(i, size=10)[0] for i in [df[df['layer_id'] == i] for i in range(self.num_graph)]]
         return community
+
+    def community_detection_twice(self, community, method='infomap', **kwargs):
+        cdt = []
+        for i, cl in zip(range(self.num_graph), community):
+            sub_graphs = [self.sub_graph(cl[cl['community'] == i]['tazid'].unique()) for i in cl['community'].unique()]
+            smcs = []
+            for sub_graph in range(len(sub_graphs)):
+                if method == 'infomap':
+                    smc = sub_graph.info_map(sub_graph.nx_graph[i], kwargs)
+                if method == 'louvain':
+                    smc = sub_graph.louvain(sub_graph.nx_graph[i], kwargs)
+                smcs.append(smc)
+            cdt.append(pd.concat(smcs, axis=0))
+        return cdt
 
     def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
         sns.set_style('ticks')
@@ -770,8 +790,14 @@ class GeoMultiGraph:
                     neighbor_community.append(int(community[community['tazid'] == tazid]['community']))
             table['tazid'].append(i)
             table['community'].append(np.argmax(np.bincount(neighbor_community)))
-        # queen = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
-        return pd.DataFrame.from_dict(table), len(r_list) - 1, len(un_list)
+        result = pd.DataFrame.from_dict(table)
+        queen = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
+        for index, row in result.iterrows():
+            neighbor = queen.neighbors[self.__get_index_by_tazid(row['tazid'])]
+            c_neighbor = [int(result['community'][result['tazid'] == self.__get_tazid(i)]) for i in neighbor]
+            if not row['community'] in c_neighbor:
+                result.loc[index, 'community'] = np.argmax(np.bincount(c_neighbor))
+        return result, len(r_list) - 1, len(un_list)
 
     def __queen_neighbor_weight(self):
         w = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
