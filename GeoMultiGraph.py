@@ -10,6 +10,7 @@ import powerlaw
 import infomap
 import tensorly as tl
 from pysal.lib import weights
+from sklearn.decomposition import NMF
 
 
 def get_closeness_centrality(g):
@@ -96,6 +97,19 @@ class GeoMultiGraph:
             self._network_list = network_list
         if generate_nx:
             self.__update_nx_graph()
+
+    def export(self, type, filename):
+        if type == 'MultiTensor':
+            with open(filename, 'w') as f:
+                for i in range(self.num_nodes):
+                    for j in range(self.num_nodes):
+                        if not i == j:
+                            w_layers = ''
+                            for layer in range(self.num_graph):
+                                w_layers += str(self._graph[layer][i][j]) + ' '
+                            f.write('E %d %d %s\n' % (i, j, w_layers))
+                f.close()
+        return
 
     def recovery(self):
         '''
@@ -376,6 +390,43 @@ class GeoMultiGraph:
         print('%d communities found, %d point unclassified.'
               % (num_community, num_unclassify))
         return community
+
+    def community_detection_nmf(self, n_components=10, overlapping=False, threshold=0.5, min_size=10):
+        communities = []
+        for g, i in zip(self._graph, range(self.num_graph)):
+            print('NMF for network %s...' % self._network_list[i])
+            for k in range(self.num_nodes):
+                g[k][k] = self.nx_graph[i].degree(k, weight='weight')
+            model = NMF(n_components=n_components,
+                        init='random',
+                        solver='cd',
+                        max_iter=500)
+            w = model.fit_transform(g)
+            if not overlapping:
+                community = pd.DataFrame.from_dict({
+                    'tazid': [self.__get_tazid(i) for i in range(self.num_nodes)],
+                    'community': list(np.argmax(w, axis=1))})
+                community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(community),
+                                                                                     size=min_size)
+                print('Finished %s, %d communities found, %d point unclassified.'
+                      % (self._network_list[i], num_community, num_unclassify))
+                communities.append(community)
+            else:
+                community = {
+                    'tazid': [],
+                    'community': []
+                }
+                for k in range(n_components):
+                    for node in range(self.num_nodes):
+                        if w[node][k] > threshold:
+                            community['tazid'].append(self.__get_tazid(node))
+                            community['community'].append(k)
+                community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(community),
+                                                                                     size=min_size)
+                print('Finished %s, %d communities found, %d point unclassified.'
+                      % (self._network_list[i], num_community, num_unclassify))
+                communities.append(pd.DataFrame.from_dict(community))
+        return communities
 
     def community_detection_louvain(self, resolution=1., min_size=10):
         def louvain(g):
