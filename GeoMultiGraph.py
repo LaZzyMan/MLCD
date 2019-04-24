@@ -99,7 +99,7 @@ class GeoMultiGraph:
         if generate_nx:
             self.__update_nx_graph()
 
-    def export(self, type, filename):
+    def export(self, type, filename, split=True, geo_weight='kde', connect='flow'):
         if type == 'MultiTensor':
             with open(filename, 'w') as f:
                 for i in range(self.num_nodes):
@@ -110,7 +110,50 @@ class GeoMultiGraph:
                                 w_layers += str(self._graph[layer][i][j]) + ' '
                             f.write('E %d %d %s\n' % (i, j, w_layers))
                 f.close()
-        return
+            return
+        if type == 'multi_infomap':
+            tensor = self.generate_tensor(geo_weight=geo_weight, connect=connect)
+            if split:
+                with open(filename, 'w') as f:
+                    f.write('*Intra\n')
+                    for layer in range(self.num_graph):
+                        for node_0 in range(self.num_nodes):
+                            for node_1 in range(self.num_nodes):
+                                weight = tensor[node_0][node_1][layer][layer]
+                                if not weight == 0:
+                                    f.write('%d %d %d %d\n' % (layer, node_0, node_1, weight))
+                    f.write('*Inter\n')
+                    for layer_0 in range(self.num_graph):
+                        for layer_1 in range(self.num_graph):
+                            for node_0 in range(self.num_nodes):
+                                for node_1 in range(self.num_nodes):
+                                    if not layer_0 == layer_1:
+                                        weight = tensor[node_0][node_1][layer_0][layer_1]
+                                        if not weight == 0:
+                                            f.write('%d %d %d %d %d\n' % (layer_0, node_0, layer_1, node_1, weight))
+                    f.close()
+                return
+            else:
+                with open(filename, 'w') as f:
+                    for layer_0 in range(self.num_graph):
+                        for layer_1 in range(self.num_graph):
+                            for node_0 in range(self.num_nodes):
+                                for node_1 in range(self.num_nodes):
+                                        weight = tensor[node_0][node_1][layer_0][layer_1]
+                                        if not weight == 0:
+                                            f.write('%d %d %d %d %d\n' % (layer_0, node_0, layer_1, node_1, weight))
+                    f.close()
+                return
+        if type == 'single_infomap':
+            for i in range(self.num_graph):
+                with open('%s_%s.dat' % (filename, self._network_list[i]), 'w') as f:
+                    for j in range(self.num_nodes):
+                        for k in range(self.num_nodes):
+                            if not self._graph[i][j][k] == 0:
+                                f.write('%d %d %d\n' % (j, k, self._graph[i][j][k]))
+                    f.close()
+            return
+        raise AttributeError('Unknown type %s.' % type)
 
     def recovery(self):
         '''
@@ -549,10 +592,14 @@ class GeoMultiGraph:
             smcs = []
             num_community = 0
             for sub_graph in sub_graphs:
-                if method == 'infomap':
-                    smc = sub_graph.info_map(sub_graph.nx_graph[i], **kwargs)
-                if method == 'louvain':
-                    smc = sub_graph.louvain(sub_graph.nx_graph[i], **kwargs)
+                try:
+                    if method == 'infomap':
+                        smc = sub_graph.info_map(sub_graph.nx_graph[i], **kwargs)
+                    if method == 'louvain':
+                        smc = sub_graph.louvain(sub_graph.nx_graph[i], **kwargs)
+                except:
+                    smc = sub_graph._geo_mapping[['tazid']].copy()
+                    smc['community'] = 0
                 smc['community'] = smc['community'] + num_community
                 num_community += len(smc['community'].unique())
                 smcs.append(smc)
