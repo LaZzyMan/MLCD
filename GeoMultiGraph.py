@@ -11,6 +11,7 @@ import infomap
 import tensorly as tl
 from pysal.lib import weights
 from sklearn.decomposition import NMF
+from sklearn.preprocessing import normalize
 
 
 def get_closeness_centrality(g):
@@ -546,11 +547,14 @@ class GeoMultiGraph:
         for i, cl in zip(range(self.num_graph), community):
             sub_graphs = [self.sub_graph(cl[cl['community'] == i]['tazid'].unique()) for i in cl['community'].unique()]
             smcs = []
-            for sub_graph in range(len(sub_graphs)):
+            num_community = 0
+            for sub_graph in sub_graphs:
                 if method == 'infomap':
-                    smc = sub_graph.info_map(sub_graph.nx_graph[i], kwargs)
+                    smc = sub_graph.info_map(sub_graph.nx_graph[i], **kwargs)
                 if method == 'louvain':
-                    smc = sub_graph.louvain(sub_graph.nx_graph[i], kwargs)
+                    smc = sub_graph.louvain(sub_graph.nx_graph[i], **kwargs)
+                smc['community'] = smc['community'] + num_community
+                num_community += len(smc['community'].unique())
                 smcs.append(smc)
             cdt.append(pd.concat(smcs, axis=0))
         return cdt
@@ -732,6 +736,45 @@ class GeoMultiGraph:
             map_view.add_layer(layer)
             map_view.update()
 
+    def read_multi_tensor_result(self, filename, vec='u', min_size=10):
+        u_file = 'u_' + filename
+        v_file = 'v_' + filename
+        u = []
+        v = []
+        with open(u_file, 'r') as f:
+            for line in f.readlines()[1:]:
+                u.append([float(i) for i in line.split(' ')[1:]])
+            f.close()
+        u = np.array(u)
+        u = normalize(u, axis=1, norm='l1')
+        with open(v_file, 'r') as f:
+            for line in f.readlines()[1:]:
+                v.append([float(i) for i in line.split(' ')[1:]])
+            f.close()
+        v = np.array(v)
+        v = normalize(v, axis=1, norm='l1')
+        if vec == 'u':
+            community = pd.DataFrame.from_dict({
+                'tazid': [self.__get_tazid(i) for i in range(self.num_nodes)],
+                'community': list(np.argmax(u, axis=1))})
+            community, num_community, num_unclassify = self.__simplify_community(community, size=min_size)
+            print('Finished %d communities found, %d point unclassified.' % (num_community, num_unclassify))
+            return community
+        if vec == 'v':
+            community = pd.DataFrame.from_dict({
+                'tazid': [self.__get_tazid(i) for i in range(self.num_nodes)],
+                'community': list(np.argmax(v, axis=1))})
+            community, num_community, num_unclassify = self.__simplify_community(community, size=min_size)
+            print('Finished %d communities found, %d point unclassified.' % (num_community, num_unclassify))
+            return community
+        if vec == 'uv':
+            community = pd.DataFrame.from_dict({
+                'tazid': [self.__get_tazid(i) for i in range(self.num_nodes)],
+                'community': list(np.argmax(v, axis=1))})
+            community, num_community, num_unclassify = self.__simplify_community(community, size=min_size)
+            print('Finished %d communities found, %d point unclassified.' % (num_community, num_unclassify))
+            return community
+
     def __get_tazid(self, index):
         return self._geo_mapping['tazid'][index]
 
@@ -780,24 +823,31 @@ class GeoMultiGraph:
                 table['tazid'].append(k)
                 table['community'].append(i)
         # classify single points by knn
-        w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=30)
-        for i in un_list:
-            neighbors = w.neighbors[self.__get_index_by_tazid(i)]
-            neighbor_community = []
-            for neighbor in neighbors:
-                tazid = self.__get_tazid(neighbor)
-                if tazid not in un_list:
-                    neighbor_community.append(int(community[community['tazid'] == tazid]['community']))
-            table['tazid'].append(i)
-            table['community'].append(np.argmax(np.bincount(neighbor_community)))
+        try:
+            w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=len(un_list) + 1)
+            for i in un_list:
+                neighbors = w.neighbors[self.__get_index_by_tazid(i)]
+                neighbor_community = []
+                for neighbor in neighbors:
+                    tazid = self.__get_tazid(neighbor)
+                    if tazid not in un_list:
+                        neighbor_community.append(int(community[community['tazid'] == tazid]['community']))
+                table['tazid'].append(i)
+                table['community'].append(np.argmax(np.bincount(neighbor_community)))
+        except IndexError:
+            print('Too many unclassified node.')
+            for i in un_list:
+                table['tazid'].append(i)
+                table['community'].append(len(r_list))
         result = pd.DataFrame.from_dict(table)
+        #
         queen = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
         for index, row in result.iterrows():
             neighbor = queen.neighbors[self.__get_index_by_tazid(row['tazid'])]
             c_neighbor = [int(result['community'][result['tazid'] == self.__get_tazid(i)]) for i in neighbor]
             if not row['community'] in c_neighbor:
                 result.loc[index, 'community'] = np.argmax(np.bincount(c_neighbor))
-        return result, len(r_list) - 1, len(un_list)
+        return result, len(r_list), len(un_list)
 
     def __queen_neighbor_weight(self):
         w = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
