@@ -12,6 +12,7 @@ import tensorly as tl
 from pysal.lib import weights
 from sklearn.decomposition import NMF
 from sklearn.preprocessing import normalize
+import subprocess
 
 
 def get_closeness_centrality(g):
@@ -67,11 +68,12 @@ def merge_layers(mc):
 
 
 class GeoMultiGraph:
-    def __init__(self, geo_mapping=None, graph=None, network_list=None, generate_nx=False):
+    def __init__(self, geo_mapping=None, graph=None, network_list=None, generate_nx=False, infomap_url='../../Infomap/Infomap '):
         self._geo_mapping = geo_mapping
         self._root_graph = graph
         self._graph = graph
         self._network_list = network_list
+        self._infomap_url = infomap_url
         if graph is None:
             self._num_nodes = 0
             self._num_graph = 0
@@ -99,9 +101,35 @@ class GeoMultiGraph:
         if generate_nx:
             self.__update_nx_graph()
 
-    def export(self, type, filename, split=True, geo_weight='kde', connect='flow'):
+    def import_map_file(self, filename, min_size=10):
+        tag = False
+        table = {
+            'tazid': [],
+            'community': []
+        }
+        code_length = 0.
+        with open(filename, 'r') as f:
+            for line in f.readlines():
+                if '# codelength' in line:
+                    code_length = float(line.split(' ')[2])
+                if '*Link' in line:
+                    break
+                if tag:
+                    node = eval(line.split(' ')[1])
+                    tree = line.split(' ')[0]
+                    table['tazid'].append(self.__get_tazid(int(node)))
+                    table['community'].append(int(tree.split(':')[0]))
+                if '*Node' in line:
+                    tag = True
+            f.close()
+        community, num_community, num_unclassify = self.__simplify_community(pd.DataFrame.from_dict(table), size=min_size)
+        print('Finished. %d communities found, %d point unclassified, code length %f.'
+              % (num_community, num_unclassify, code_length))
+        return community, code_length
+
+    def export(self, type, folder, filename, split=True, geo_weight='kde', connect='flow'):
         if type == 'MultiTensor':
-            with open(filename, 'w') as f:
+            with open('%s/%s' % (folder, filename), 'w') as f:
                 for i in range(self.num_nodes):
                     for j in range(self.num_nodes):
                         if not i == j:
@@ -114,14 +142,14 @@ class GeoMultiGraph:
         if type == 'multi_infomap':
             tensor = self.generate_tensor(geo_weight=geo_weight, connect=connect)
             if split:
-                with open(filename, 'w') as f:
+                with open('%s/%s' % (folder, filename), 'w') as f:
                     f.write('*Intra\n')
                     for layer in range(self.num_graph):
                         for node_0 in range(self.num_nodes):
                             for node_1 in range(self.num_nodes):
                                 weight = tensor[node_0][node_1][layer][layer]
                                 if not weight == 0:
-                                    f.write('%d %d %d %d\n' % (layer, node_0, node_1, weight))
+                                    f.write('%d %d %d %f\n' % (layer, node_0, node_1, weight))
                     f.write('*Inter\n')
                     for layer_0 in range(self.num_graph):
                         for layer_1 in range(self.num_graph):
@@ -130,23 +158,23 @@ class GeoMultiGraph:
                                     if not layer_0 == layer_1:
                                         weight = tensor[node_0][node_1][layer_0][layer_1]
                                         if not weight == 0:
-                                            f.write('%d %d %d %d %d\n' % (layer_0, node_0, layer_1, node_1, weight))
+                                            f.write('%d %d %d %d %f\n' % (layer_0, node_0, layer_1, node_1, weight))
                     f.close()
                 return
             else:
-                with open(filename, 'w') as f:
+                with open('%s/%s' % (folder, filename), 'w') as f:
                     for layer_0 in range(self.num_graph):
                         for layer_1 in range(self.num_graph):
                             for node_0 in range(self.num_nodes):
                                 for node_1 in range(self.num_nodes):
                                         weight = tensor[node_0][node_1][layer_0][layer_1]
                                         if not weight == 0:
-                                            f.write('%d %d %d %d %d\n' % (layer_0, node_0, layer_1, node_1, weight))
+                                            f.write('%d %d %d %d %f\n' % (layer_0, node_0, layer_1, node_1, weight))
                     f.close()
                 return
         if type == 'single_infomap':
             for i in range(self.num_graph):
-                with open('%s_%s.dat' % (filename, self._network_list[i]), 'w') as f:
+                with open('%s/%s_%s' % (folder, self._network_list[i], filename), 'w') as f:
                     for j in range(self.num_nodes):
                         for k in range(self.num_nodes):
                             if not self._graph[i][j][k] == 0:
@@ -494,12 +522,46 @@ class GeoMultiGraph:
         df_partition = [self.louvain(g, resolution, min_size) for g in self.nx_graph]
         return df_partition
 
+    def info_map_c(self, in_put, out_put, min_size=1, **kwargs):
+        command = '../../Infomap/Infomap '
+        for key, item in kwargs.items():
+            if type(item) is bool:
+                if item:
+                    command += '--%s ' % key.replace('_', '-')
+            else:
+                command += '--%s %s ' % (key.replace('_', '-'), str(item))
+        command += '%s %s' % (in_put, out_put)
+        subprocess.call(command, shell=True)
+        cl, _ = self.import_map_file(filename='data/' + kwargs['out_name'] + '.map', min_size=min_size)
+        return cl
+
+    def community_detection_c(self,
+                              k=True,
+                              p=False,
+                              y=False,
+                              num_trials=False,
+                              silent=True):
+        self.export(type='single_infomap', filename='infomap.dat', folder='data')
+        communities = [self.info_map_c(in_put='data/%s_infomap.dat' % network,
+                                       out_put='data',
+                                       out_name='%s_y%sp%sk%s' % (network, str(y), str(p), str(k)),
+                                       input_format='link-list',
+                                       directed=True,
+                                       zero_based_numbering=True,
+                                       include_self_links=k,
+                                       map=True,
+                                       self_link_teleportation_probability=y,
+                                       teleportation_probability=p,
+                                       num_trials=num_trials,
+                                       silent=silent) for network in self._network_list]
+        return communities
+
     def info_map(self, g, min_size=10):
         table = {
             'tazid': [],
             'community': []
         }
-        infomap_wrapper = infomap.Infomap('--two-level --directed')
+        infomap_wrapper = infomap.Infomap('--two-level --directed -y 0.2')
         network = infomap_wrapper.network()
         for i in range(self.num_nodes):
             for j in range(self.num_nodes):
@@ -585,18 +647,27 @@ class GeoMultiGraph:
         community = [self.__simplify_community(i, size=10)[0] for i in [df[df['layer_id'] == i] for i in range(self.num_graph)]]
         return community
 
-    def community_detection_twice(self, community, method='infomap', **kwargs):
+    def community_detection_twice(self, community, method='cinfomap', **kwargs):
         cdt = []
         for i, cl in zip(range(self.num_graph), community):
             sub_graphs = [self.sub_graph(cl[cl['community'] == i]['tazid'].unique()) for i in cl['community'].unique()]
             smcs = []
             num_community = 0
-            for sub_graph in sub_graphs:
+            for sub_graph, network in zip(sub_graphs, self._network_list):
                 try:
                     if method == 'infomap':
                         smc = sub_graph.info_map(sub_graph.nx_graph[i], **kwargs)
                     if method == 'louvain':
                         smc = sub_graph.louvain(sub_graph.nx_graph[i], **kwargs)
+                    if method == 'cinfomap':
+                        smc = sub_graph.info_map_c(in_put='data/%s_infomap.dat' % network,
+                                                   out_put='data',
+                                                   input_format='link-list',
+                                                   directed=True,
+                                                   zero_based_numbering=True,
+                                                   map=True,
+                                                   silent=True,
+                                                   **kwargs)
                 except:
                     smc = sub_graph._geo_mapping[['tazid']].copy()
                     smc['community'] = 0
@@ -653,18 +724,24 @@ class GeoMultiGraph:
         graphs.map(sns.distplot, 'community', hist=hist, kde=kde, rug=rug, bins=bins)
         plt.show()
 
-    def draw_choropleth_map(self, map_view, data, value='', title='Choropleth Map', cmap=Spectral_10):
+    def draw_choropleth_map(self, map_view, data, value='', integer=True, title='Choropleth Map', cmap=Spectral_10):
         timestamp = int(time.time())
         value_min = data[value].min()
         value_max = data[value].max()
-        if not value_min == value_max:
-            mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min + 1)
-        else:
-            mpl_colormap = cmap.mpl_colormap
+        set_color = None
+        if integer:
+            cmap = IntegerColorMap(value_max - value_min + 1)
 
-        def set_color(x):
-            rgba = mpl_colormap((x[value] + value_min))
-            return rgb2hex(rgba[0], rgba[1], rgba[2])
+            def func(x):
+                return cmap.get_hex_color(x[value] + value_min)
+            set_color = func
+        else:
+            mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min + 1)
+
+            def func(x):
+                rgba = mpl_colormap((x[value] + value_min))
+                return rgb2hex(rgba[0], rgba[1], rgba[2])
+            set_color = func
         value_geo_map = self._geo_mapping.merge(data, on='tazid')
         value_geo_map = value_geo_map[['tazid', value, 'geometry']]
         value_geo_map['color'] = value_geo_map.apply(set_color, axis=1)

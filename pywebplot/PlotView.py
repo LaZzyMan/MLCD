@@ -2,7 +2,7 @@ from pywebplot import *
 import webbrowser
 import os
 from jinja2 import Template
-from IPython.display import HTML
+from IPython.display import IFrame
 
 
 class Component(object):
@@ -126,8 +126,7 @@ class PlotView(object):
         self._server.add_view(title=self.title, filename='%s.html' % self.title.lower().replace(' ', '_'))
         self._server.run_bk()
         if inline:
-            HTML('<iframe src="http://%s/%s.html", width=1000, height=600></iframe>'
-                 % (self._server.home_url, self.title.lower().replace(' ', '_')))
+            IFrame(src='http://%s/%s.html' % (self._server.home_url, self.title.lower().replace(' ', '_')), width=1000, height=600)
         else:
             webbrowser.open_new_tab(self._dir_html)
 

@@ -1,18 +1,142 @@
 from pywebplot import *
 from palettable.cartocolors.qualitative import Antique_10, Bold_10, Pastel_10, Prism_10, Safe_10, Vivid_10
 from GeoMultiGraph import *
+import subprocess
+from functools import reduce
+import numpy as np
+import copy
+import json
 from palettable.colorbrewer.sequential import Reds_9, GnBu_9, BuPu_9, Blues_9
 
 
+def run_infomap_command(in_put, out_put, **kwargs):
+    command = '../../Infomap/Infomap '
+    for key, item in kwargs.items():
+        if type(item) is bool:
+            if item:
+                command += '--%s ' % key.replace('_', '-')
+        else:
+            command += '--%s %s ' % (key.replace('_', '-'), str(item))
+    command += '%s %s' % (in_put, out_put)
+    subprocess.call(command, shell=True)
+    return in_put.split('.')[0] + '.map'
+
+
+def get_code_length(filename):
+    code_length = 0.
+    with open(filename, 'r') as f:
+        for line in f.readlines():
+            if '# codelength' in line:
+                code_length = float(line.split(' ')[2])
+                break
+        f.close()
+    return code_length
+
+
+def grid_search(func, score, param_grid, **kwargs):
+    params = []
+    param_names = []
+    for key, item in param_grid.items():
+        param_names.append(key)
+        params.append(item)
+    params.insert(0, [[]])
+
+    def grid(x, y):
+        r = []
+        for i in x:
+            for j in y:
+                tmp = copy.deepcopy(i)
+                tmp.append(j)
+                r.append(tmp)
+        return r
+    pg = reduce(grid, params)
+    scores = []
+    for i in pg:
+        display = ''
+        for p, v in zip(param_names, i):
+            kwargs[p] = v
+            display += '%s: %s, ' % (p, str(v))
+        r = func(**kwargs)
+        s = score(r)
+        scores.append(s)
+        print(display + 'score: %s.' % s)
+    best = pg[scores.index(min(scores))]
+    display = ''
+    for p, v in zip(param_names, best):
+        display += '%s: %s \n' % (p, str(v))
+    print('Best params: \n' + display)
+    return best, [i.append(j) for i, j in zip(pg, scores)]
+
+
 if __name__ == '__main__':
-    # WEB_SERVER.run()
-    mkdir()
+    WEB_SERVER.run()
+    networks = ['2012', '2013', '2014', '2015', '2016', '2017']
     gmg = GeoMultiGraph()
-    gmg.load('../src/data/GeoMultiGraph_week', network_list=['2012', '2013', '2014', '2015', '2016', '2017'], generate_nx=True)
-    cll = gmg.community_detection_louvain(resolution=1., min_size=10)
-    gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='louvain')
-    scll = gmg.community_detection_twice(cll, method='louvain', min_size=10)
-    gmg.draw_multi_scale_community(community=scll, cmap=Prism_10, inline=True, title='s-louvain')
+    gmg.load('../src/data/GeoMultiGraph_week', network_list=networks, generate_nx=True)
+    mkdir()
+    cl = gmg.community_detection_c(k=False, p=False, y=False, num_trials=False, silent=False)
+    gmg.draw_multi_scale_community(community=cl, inline=True, title='c-infomap-single-default')
+    # ommunity_detection_twice(community=cl, method='infomap', min_size=5)
+    # gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='c-infomap-single-infomap')
+    # cl, _ = gmg.import_map_file('data/2012_infomap.map', min_size=5)
+    # sub_graphs = [gmg.sub_graph(cl[cl['community'] == i]['tazid'].unique()) for i in cl['community'].unique()]
+    # for i in range(len(sub_graphs)):
+    #     sub_graphs[i].export(type='single_infomap', filename='infomap_sub_%d.dat' % i)
+    # sub_graphs = [gmg.sub_graph(cl[cl['community'] == i]['tazid'].unique()) for i in cl['community'].unique()]
+    # sub_graphs[0].export(type='single_infomap', filename='test.dat')
+    # grid_result = {}
+    # for network in networks:
+    #     best, result = grid_search(func=run_infomap_command,
+    #                           score=get_code_length,
+    #                           param_grid={
+    #                               'teleportation_probability': list(np.arange(0, 0.3, 0.01)),
+    #                               'self_link_teleportation_probability': list(np.arange(0, 0.3, 0.01)),
+    #                               'include_self_links': [True, False]
+    #                           },
+    #                           in_put='data/%s_infomap.dat' % network,
+    #                           out_put='data',
+    #                           input_format='link-list',
+    #                           directed=True,
+    #                           zero_based_numbering=True,
+    #                           include_self_links=True,
+    #                           map=True,
+    #                           num_trials=20,
+    #                           silent=True)
+    #     grid_result[network] = {
+    #         'best': best,
+    #         'result': result
+    #     }
+    # with open('single_grid.json', 'w') as f:
+    #     json.dump(grid_result, f)
+    #     f.close()
+    # for i in networks:
+    #     run_infomap_command(in_put='data/%s_infomap.dat' % i,
+    #                         out_put='data',
+    #                         input_format='link-list',
+    #                         directed=True,
+    #                         zero_based_numbering=True,
+    #                         include_self_links=True,
+    #                         map=True,
+    #                         teleportation_probability=0.2,
+    #                         self_link_teleportation_probability=0.15,
+    #                         num_trials=20)
+
+    # gmg.draw_multi_scale_community(community=cl, cmap=Prism_10, inline=True, title='c-infomap-single-p020-y015-k')
+    # gmg.export(type='single_infomap', filename='infomap.dat')
+    # gmg.export(type='multi_infomap',
+    #            filename='split_infomap.dat',
+    #            split=True,
+    #            geo_weight='kde',
+    #            connect='memory')
+    # gmg.export(type='multi_infomap',
+    #            filename='infomap.dat',
+    #            split=False,
+    #            geo_weight='kde',
+    #            connect='memory')
+    # cll = gmg.community_detection_louvain(resolution=1., min_size=10)
+    # gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='louvain')
+    # scll = gmg.community_detection_twice(cll, method='louvain', min_size=10)
+    # gmg.draw_multi_scale_community(community=scll, cmap=Prism_10, inline=True, title='s-louvain')
     # c_u = gmg.read_multi_tensor_result(filename='K10_result.dat', vec='u')
     # c_v = gmg.read_multi_tensor_result(filename='K10_result.dat', vec='v')
     # view = PlotView(column_num=2, row_num=1, title='multi-tensor')
@@ -32,10 +156,12 @@ if __name__ == '__main__':
     # gmg.draw_choropleth_map(map_view=maps[1], data=c_v, value='community',
     #                         title='vcommunity', cmap=Vivid_10)
     # view.plot(inline=True)
-    # cl = gmg.community_detection_infomap(min_size=10)
-    # gmg.draw_multi_scale_community(community=cl, cmap=Prism_10, inline=True, title='infomap')
-    # scl = gmg.community_detection_twice(cl, method='infomap', min_size=10)
-    # gmg.draw_multi_scale_community(community=scl, cmap=Prism_10, inline=True, title='s-infomap')
+    # cl = gmg.community_detection_infomap(min_size=0)
+    # gmg.draw_multi_scale_community(community=cl, cmap=Prism_10, inline=True, title='infomap-m0')
+    # scl = gmg.community_detection_twice(cl, method='infomap', min_size=0)
+    # gmg.draw_multi_scale_community(community=scl, cmap=Prism_10, inline=True, title='s-infomap-m0')
+    # sscl = gmg.community_detection_twice(scl, method='infomap', min_size=0)
+    # gmg.draw_multi_scale_community(community=sscl, cmap=Prism_10, inline=True, title='ss-infomap-m0')
     # cll = gmg.community_detection_louvain(resolution=1., min_size=10)
     # gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='louvain')
     # scll = gmg.community_detection_twice(cll, method='louvain', min_size=10)

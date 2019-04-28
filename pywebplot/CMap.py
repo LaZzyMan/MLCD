@@ -1,4 +1,32 @@
 from jinja2 import Template
+from pywebplot.utils import *
+from palettable.colorbrewer.qualitative import Set3_12, Set2_8, Set1_9, Pastel2_8, Pastel1_9, Paired_12, Dark2_8, Accent_8
+
+QUALITIVE = [Set3_12, Set2_8, Set1_9, Pastel2_8, Pastel1_9, Paired_12, Dark2_8, Accent_8]
+
+
+class IntegerColorMap(object):
+    def __init__(self, n):
+        super().__init__()
+        colors = []
+        for c_map in QUALITIVE:
+            colors.extend(c_map.colors)
+        self._c_map = colors
+        self._num_colors = len(colors)
+        if n > len(colors):
+            raise AttributeError('No enough colors.')
+        self._c_map = colors
+        self._num_colors = n
+
+    def get_rgb_color(self, n):
+        if n > self._num_colors:
+            raise IndexError('%d out of range.' % n)
+        return self._c_map[n]
+
+    def get_hex_color(self, n):
+        if n > self._num_colors:
+            raise IndexError('%d out of range.' % n)
+        return rgb2hex(self._c_map[n][0], self._c_map[n][1], self._c_map[n][2])
 
 
 class CMap(object):
