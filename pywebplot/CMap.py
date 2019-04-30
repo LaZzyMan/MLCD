@@ -1,19 +1,42 @@
 from jinja2 import Template
 from pywebplot.utils import *
 from palettable.colorbrewer.qualitative import Set3_12, Set2_8, Set1_9, Pastel2_8, Pastel1_9, Paired_12, Dark2_8, Accent_8
+from palettable.colorbrewer.sequential import Blues_9, BuGn_9, BuPu_9, GnBu_9, Greens_9, Greys_9, OrRd_9, Oranges_9, PuBu_9, PuBuGn_9, PuRd_9, Purples_9, RdPu_9, Reds_9, YlGn_9,  YlGnBu_9, YlOrBr_9, YlOrRd_9
 
-QUALITIVE = [Set3_12, Set2_8, Set1_9, Pastel2_8, Pastel1_9, Paired_12, Dark2_8, Accent_8]
+QUALITATIVE = [Set3_12, Set2_8, Set1_9, Pastel2_8, Pastel1_9, Paired_12, Dark2_8, Accent_8]
+SEQUENTIAL = [Blues_9, BuGn_9, BuPu_9, GnBu_9, Greens_9, Greys_9, OrRd_9, Oranges_9, PuBu_9, PuBuGn_9, PuRd_9, Purples_9, RdPu_9, Reds_9, YlGn_9, YlGnBu_9, YlOrBr_9, YlOrRd_9]
+
+
+class MultiGradColorMap(object):
+    def __init__(self, num_color, grad_value):
+        super().__init__()
+        self._num_colors = num_color
+        self._grad_calue = grad_value
+        colors = []
+        for c_map in SEQUENTIAL:
+            colors.append(c_map.mpl_colormap)
+        for i in range(int(num_color / len(SEQUENTIAL))):
+            colors.extend(colors)
+        self._c_map = colors
+
+    def get_rgb_color(self, n, v):
+        return [int(i * 255) for i in self._c_map[n](v)[:3]]
+
+    def get_hex_color(self, n, v):
+        rgb = self.get_rgb_color(n, v)
+        return rgb2hex(rgb[0], rgb[1], rgb[2])
 
 
 class IntegerColorMap(object):
     def __init__(self, n):
         super().__init__()
         colors = []
-        for c_map in QUALITIVE:
+        for c_map in QUALITATIVE:
             colors.extend(c_map.colors)
+        colors.extend(colors)
         self._c_map = colors
         self._num_colors = len(colors)
-        if n > len(colors):
+        if n > len(colors) * 2:
             raise AttributeError('No enough colors.')
         self._c_map = colors
         self._num_colors = n

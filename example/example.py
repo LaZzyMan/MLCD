@@ -72,12 +72,30 @@ if __name__ == '__main__':
     WEB_SERVER.run()
     networks = ['2012', '2013', '2014', '2015', '2016', '2017']
     gmg = GeoMultiGraph()
-    gmg.load('../src/data/GeoMultiGraph_week', network_list=networks, generate_nx=True)
+    gmg.load('../src/data/GeoMultiGraph_week', network_list=networks, generate_nx=False)
     mkdir()
-    cl = gmg.community_detection_c(k=False, p=False, y=False, num_trials=False, silent=False)
-    gmg.draw_multi_scale_community(community=cl, inline=True, title='c-infomap-single-default')
-    # ommunity_detection_twice(community=cl, method='infomap', min_size=5)
-    # gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='c-infomap-single-infomap')
+    # gmg.transform(func='kde', generate_nx=False)
+    cl, module, link = gmg.community_detection_c(k=True, p=0.1, y=0.15, num_trials=10, silent=False, min_size=5)
+    gmg.draw_multi_scale_community(community=cl, inline=True, title='c-infomap-single-k-y015-p01')
+    gmg.draw_multi_scale_community_link(module=module, link=link, inline=True, title='c-infomap-single-k-y015-p01-ml')
+    # cll = gmg.community_detection_twice(community=cl,
+    #                                     method='cinfomap',
+    #                                     min_size=5,
+    #                                     self_link_teleportation_probability=0.15,
+    #                                     teleportation_probability=0.1,
+    #                                     num_trials=10,
+    #                                     include_self_links=True,
+    #                                     out_name='y015p01kTrue')
+    # gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='sc-infomap-single-k-y015-p01-geo')
+    # clll = gmg.community_detection_twice(community=cll,
+    #                                      method='cinfomap',
+    #                                      min_size=1,
+    #                                      self_link_teleportation_probability=0.15,
+    #                                      teleportation_probability=0.1,
+    #                                      num_trials=10,
+    #                                      include_self_links=True,
+    #                                      out_name='y015p01kTrue')
+    # gmg.draw_multi_scale_community(community=clll, cmap=Prism_10, inline=True, title='ssc-infomap-single-k-y015-p01')
     # cl, _ = gmg.import_map_file('data/2012_infomap.map', min_size=5)
     # sub_graphs = [gmg.sub_graph(cl[cl['community'] == i]['tazid'].unique()) for i in cl['community'].unique()]
     # for i in range(len(sub_graphs)):
@@ -169,19 +187,34 @@ if __name__ == '__main__':
     # mc = gmg.community_detection_multi_infomap(geo_weight='kde', connect='memory', only_self_transition=True)
     # gmg.draw_multi_scale_community(community=mc, cmap=Pastel_10, inline=True, title='memory-kde-gc')
     # gmg.export(type='MultiTensor', filename='adj.dat')
-    # gc = gmg.local_community_detection_infomap(geo_weight='kde', min_size=10)
-    # plt = PlotView(column_num=1, row_num=1, title='gc-kde')
-    # plt[0].name = 'gc'
-    # map = MapBox(name='map_gc',
-    #              pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
-    #              lon=116.37363,
-    #              lat=39.915606,
-    #              style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
-    #              pitch=55,
-    #              bearing=0,
-    #              zoom=12,
-    #              viewport=plt[0])
-    # gmg.draw_choropleth_map(map_view=map, data=gc, value='community', title='gc-kde', cmap=Antique_10)
+    # kde = gmg.local_community_detection_infomap(geo_weight='kde', min_size=10)
+    # knn = gmg.local_community_detection_infomap(geo_weight='knn', min_size=10, k=30)
+    # queen2 = gmg.local_community_detection_infomap(geo_weight='queen2')
+    # kde_mean = gmg.local_community_detection_infomap(geo_weight='kde', min_size=10, bandwidth=0.06594848834453422)
+    # kde_45 = gmg.local_community_detection_infomap(geo_weight='kde', min_size=10, bandwidth=0.04522829899450801)
+    # kde_55 = gmg.local_community_detection_infomap(geo_weight='kde', min_size=10, bandwidth=0.055279032104398676)
+    # plt = PlotView(column_num=3, row_num=2, title='geo-weight')
+    # plt[0].name = 'kde'
+    # plt[1].name = 'knn'
+    # plt[2].name = 'queen2'
+    # plt[3].name = 'kde-mean'
+    # plt[4].name = 'kde-4500'
+    # plt[5].name = 'kde-5500'
+    # maps = [MapBox(name='map%d' % i,
+    #                pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
+    #                lon=116.37363,
+    #                lat=39.915606,
+    #                style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
+    #                pitch=0,
+    #                bearing=0,
+    #                zoom=9,
+    #                viewport=plt[i]) for i in range(6)]
+    # gmg.draw_choropleth_map(map_view=maps[0], data=kde, value='community', title='kde')
+    # gmg.draw_choropleth_map(map_view=maps[1], data=knn, value='community', title='knn')
+    # gmg.draw_choropleth_map(map_view=maps[2], data=queen2, value='community', title='queen2')
+    # gmg.draw_choropleth_map(map_view=maps[3], data=kde_mean, value='community', title='kdem')
+    # gmg.draw_choropleth_map(map_view=maps[4], data=kde_45, value='community', title='kde45')
+    # gmg.draw_choropleth_map(map_view=maps[5], data=kde_55, value='community', title='kde55')
     # plt.plot(inline=True)
     # connect_dict = ['flow', 'memory', 'all_connect', 'none']
     # geo_weight_dict = ['queen', 'queen2', 'knn', 'kde', 'none']
