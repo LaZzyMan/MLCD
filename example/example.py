@@ -69,23 +69,25 @@ def grid_search(func, score, param_grid, **kwargs):
 
 
 if __name__ == '__main__':
-    WEB_SERVER.run()
+    # WEB_SERVER.run()
     networks = ['2012', '2013', '2014', '2015', '2016', '2017']
     gmg = GeoMultiGraph()
     gmg.load('../src/data/GeoMultiGraph_week', network_list=networks, generate_nx=False)
     mkdir()
     # gmg.transform(func='kde', generate_nx=False)
     cl, module, link = gmg.community_detection_c(k=True, p=0.1, y=0.15, num_trials=10, silent=False, min_size=5)
-    gmg.draw_multi_scale_community(community=cl, inline=True, title='c-infomap-single-k-y015-p01')
-    gmg.draw_multi_scale_community_link(module=module, link=link, inline=True, title='c-infomap-single-k-y015-p01-ml')
-    # cll = gmg.community_detection_twice(community=cl,
-    #                                     method='cinfomap',
-    #                                     min_size=5,
-    #                                     self_link_teleportation_probability=0.15,
-    #                                     teleportation_probability=0.1,
-    #                                     num_trials=10,
-    #                                     include_self_links=True,
-    #                                     out_name='y015p01kTrue')
+    # gmg.draw_multi_scale_community(community=cl, inline=True, title='c-infomap-single-k-y015-p01')
+    # gmg.draw_gradient_community(community=cl, num_community=1, inline=True, title='c-infomap-single-k-y015-p01-g1')
+    # gmg.draw_multi_scale_community_link(module=module, link=link, inline=True, title='c-infomap-single-k-y015-p01-ml')
+    cll = gmg.community_detection_twice(community=cl,
+                                        method='cinfomap',
+                                        min_size=5,
+                                        self_link_teleportation_probability=0.15,
+                                        teleportation_probability=0.1,
+                                        num_trials=10,
+                                        include_self_links=True,
+                                        out_name='y015p01kTrue')
+    gmg.draw_gradient_community(community=cll, num_community=10, inline=True, title='sc-infomap-single-k-y015-p01-g1')
     # gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='sc-infomap-single-k-y015-p01-geo')
     # clll = gmg.community_detection_twice(community=cll,
     #                                      method='cinfomap',

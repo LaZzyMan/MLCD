@@ -737,15 +737,15 @@ class GeoMultiGraph:
                         sub_graph.export(type='single_infomap', filename='infomap.dat', folder='data')
                         params = copy.deepcopy(kwargs)
                         out_name = params.pop('out_name')
-                        smc = sub_graph.info_map_c(in_put='data/%s_infomap.dat' % sub_graph._network_list[i],
-                                                   out_put='data',
-                                                   out_name='%s_%s' % (sub_graph._network_list[i], out_name),
-                                                   input_format='link-list',
-                                                   directed=True,
-                                                   zero_based_numbering=True,
-                                                   map=True,
-                                                   silent=True,
-                                                   **params)
+                        smc, _, _ = sub_graph.info_map_c(in_put='data/%s_infomap.dat' % sub_graph._network_list[i],
+                                                         out_put='data',
+                                                         out_name='%s_%s' % (sub_graph._network_list[i], out_name),
+                                                         input_format='link-list',
+                                                         directed=True,
+                                                         zero_based_numbering=True,
+                                                         map=True,
+                                                         silent=True,
+                                                         **params)
                 except:
                     smc = sub_graph._geo_mapping[['tazid']].copy()
                     smc['community'] = 0
@@ -809,11 +809,10 @@ class GeoMultiGraph:
         graphs.map(sns.distplot, 'community', hist=hist, kde=kde, rug=rug, bins=bins)
         plt.show()
 
-    def draw_choropleth_map(self, map_view, data, value='', integer=True, title='Choropleth Map', cmap=Spectral_10):
+    def draw_choropleth_map(self, map_view, data, value='', integer=True, title='Choropleth Map', c_map=Spectral_10.mpl_colormap):
         timestamp = int(time.time())
         value_min = data[value].min()
         value_max = data[value].max()
-        set_color = None
         if integer:
             cmap = IntegerColorMap(value_max - value_min + 1)
 
@@ -821,19 +820,17 @@ class GeoMultiGraph:
                 return cmap.get_hex_color(int(x[value] + value_min))
             set_color = func
         else:
-            mpl_colormap = cmap.get_mpl_colormap(N=value_max - value_min + 1)
-
             def func(x):
-                rgba = mpl_colormap((x[value] + value_min))
+                rgba = c_map((x[value]))
                 return rgb2hex(rgba[0], rgba[1], rgba[2])
             set_color = func
-        value_geo_map = self._geo_mapping.merge(data, on='tazid')
+        value_geo_map = gpd.GeoDataFrame(data.merge(self._geo_mapping, on='tazid'))
         value_geo_map = value_geo_map[['tazid', value, 'geometry']]
         value_geo_map['color'] = value_geo_map.apply(set_color, axis=1)
         value_geo_map.to_file('dist/data/%s.geojson' % (title + str(timestamp)), driver='GeoJSON')
-        source = GeojsonSource(id=value, data='%s.geojson' % (title + str(timestamp)))
+        source = GeojsonSource(id=value.replace('_', '') + title, data='%s.geojson' % (title + str(timestamp)))
         map_view.add_source(source)
-        layer = FillLayer(id=value, source=value, p_fill_opacity=0.7, p_fill_color=['get', 'color'])
+        layer = FillLayer(id=value.replace('_', '') + title, source=value.replace('_', '') + title, p_fill_opacity=0.7, p_fill_color=['get', 'color'])
         map_view.add_layer(layer)
         map_view.update()
 
@@ -870,6 +867,33 @@ class GeoMultiGraph:
         map_view.add_layer(m_layer)
         map_view.update()
 
+    def draw_gradient_community(self, community, column=2, row=3, num_community=-1, inline=False, title='Gradient-Community'):
+        for c in community:
+            c['num_nodes'] = c.apply(lambda x: len(c[c['community'] == x['community']]), axis=1)
+            c = c.sort_values(by='num_nodes')
+        if num_community < 0:
+            communities = [[c[c['community'] == i] for i in c['community'].unique()] for c in community]
+        else:
+            communities = [[c[c['community'] == i] for i in c['community'].unique()[:num_community]] for c in community]
+        view = PlotView(column_num=row, row_num=column, title=title)
+        for subview, i in zip(view, range(self.num_graph)):
+            subview.name = self._network_list[i]
+        maps = [MapBox(name='map_%d' % i,
+                       pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
+                       lon=116.37363,
+                       lat=39.915606,
+                       style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
+                       pitch=0,
+                       bearing=0,
+                       zoom=9,
+                       viewport=view[i]) for i in range(self.num_graph)]
+        for i in range(self.num_graph):
+            c_map = MultiGradColorMap(num_color=len(communities[i]), grad_value=1.)
+            for c, j in zip(communities[i], range(len(communities[i]))):
+                self.draw_choropleth_map(map_view=maps[i], data=c, value='flow_norm', integer=False,
+                                         title='%sc%d' % (self._network_list[i], j), c_map=c_map.get_c_map(j))
+        view.plot(inline=inline)
+
     def draw_multi_scale_community_link(self, module, link, column=2, row=3, inline=False, title='Multi-Link'):
         view = PlotView(column_num=row, row_num=column, title=title)
         for subview, i in zip(view, range(self.num_graph)):
@@ -902,7 +926,7 @@ class GeoMultiGraph:
                        zoom=9,
                        viewport=view[i]) for i in range(self.num_graph)]
         for i in range(self.num_graph):
-            self.draw_choropleth_map(map_view=maps[i], data=community[i], value='community', title='%scommunity' % self._network_list[i], cmap=cmap)
+            self.draw_choropleth_map(map_view=maps[i], data=community[i], value='community', title='%scommunity' % self._network_list[i], c_map=cmap)
         view.plot(inline=inline)
 
     def draw_network(self, color='white', width=1., value='weight', bk=True, inline=False, row=3, column=2):

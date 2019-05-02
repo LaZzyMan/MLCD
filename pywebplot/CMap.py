@@ -4,14 +4,14 @@ from palettable.colorbrewer.qualitative import Set3_12, Set2_8, Set1_9, Pastel2_
 from palettable.colorbrewer.sequential import Blues_9, BuGn_9, BuPu_9, GnBu_9, Greens_9, Greys_9, OrRd_9, Oranges_9, PuBu_9, PuBuGn_9, PuRd_9, Purples_9, RdPu_9, Reds_9, YlGn_9,  YlGnBu_9, YlOrBr_9, YlOrRd_9
 
 QUALITATIVE = [Set3_12, Set2_8, Set1_9, Pastel2_8, Pastel1_9, Paired_12, Dark2_8, Accent_8]
-SEQUENTIAL = [Blues_9, BuGn_9, BuPu_9, GnBu_9, Greens_9, Greys_9, OrRd_9, Oranges_9, PuBu_9, PuBuGn_9, PuRd_9, Purples_9, RdPu_9, Reds_9, YlGn_9, YlGnBu_9, YlOrBr_9, YlOrRd_9]
+SEQUENTIAL = [Blues_9, Reds_9, Greens_9, Oranges_9, Greys_9, Purples_9, BuGn_9, BuPu_9, GnBu_9, OrRd_9, PuBu_9, PuBuGn_9, PuRd_9, RdPu_9, YlGn_9, YlGnBu_9, YlOrBr_9, YlOrRd_9]
 
 
 class MultiGradColorMap(object):
     def __init__(self, num_color, grad_value):
         super().__init__()
         self._num_colors = num_color
-        self._grad_calue = grad_value
+        self._grad_value = grad_value
         colors = []
         for c_map in SEQUENTIAL:
             colors.append(c_map.mpl_colormap)
@@ -20,11 +20,14 @@ class MultiGradColorMap(object):
         self._c_map = colors
 
     def get_rgb_color(self, n, v):
-        return [int(i * 255) for i in self._c_map[n](v)[:3]]
+        return [int(i * 255) for i in self._c_map[n](int(v * (255. / self._grad_value)))[:3]]
 
     def get_hex_color(self, n, v):
         rgb = self.get_rgb_color(n, v)
         return rgb2hex(rgb[0], rgb[1], rgb[2])
+
+    def get_c_map(self, n):
+        return lambda x: self._c_map[n](int(x * (255. / self._grad_value)))
 
 
 class IntegerColorMap(object):
