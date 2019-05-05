@@ -1,12 +1,11 @@
 from pywebplot import *
-from palettable.cartocolors.qualitative import Antique_10, Bold_10, Pastel_10, Prism_10, Safe_10, Vivid_10
 from GeoMultiGraph import *
 import subprocess
 from functools import reduce
 import numpy as np
 import copy
 import json
-from palettable.colorbrewer.sequential import Reds_9, GnBu_9, BuPu_9, Blues_9
+from palettable.colorbrewer.sequential import OrRd_9
 
 
 def run_infomap_command(in_put, out_put, **kwargs):
@@ -72,22 +71,50 @@ if __name__ == '__main__':
     # WEB_SERVER.run()
     networks = ['2012', '2013', '2014', '2015', '2016', '2017']
     gmg = GeoMultiGraph()
-    gmg.load('../src/data/GeoMultiGraph_week', network_list=networks, generate_nx=False)
+    gmg.load('../src/data/GeoMultiGraph_week', network_list=networks, generate_nx=True)
     mkdir()
-    # gmg.transform(func='kde', generate_nx=False)
-    cl, module, link = gmg.community_detection_c(k=True, p=0.1, y=0.15, num_trials=10, silent=False, min_size=5)
-    # gmg.draw_multi_scale_community(community=cl, inline=True, title='c-infomap-single-k-y015-p01')
+    gmg.draw_network(inline=True, percent=25)
+    # gmg.transform(func='kde', generate_nx=False, bandwidth=None)
+    # gmg.draw_tensor(geo_weight='kde', connect='all_connect')
+    # community, _, _ = gmg.community_detection_multi_c(k=True,
+    #                                                   p=0.10,
+    #                                                   y=0.20,
+    #                                                   m=False,
+    #                                                   num_trials=3,
+    #                                                   silent=False,
+    #                                                   min_size=5,
+    #                                                   geo_weight='none',
+    #                                                   connect='memory',
+    #                                                   split=True,
+    #                                                   rebuild=True)
+    # gmg.draw_multi_scale_community(community=community, inline=True, title='c-infomap-multi-na-k-p010-y020-split-geo')
+    # smc = gmg.community_detection_twice_multi(community=community,
+    #                                           k=True,
+    #                                           p=0.10,
+    #                                           y=0.20,
+    #                                           m=False,
+    #                                           num_trials=3,
+    #                                           silent=False,
+    #                                           min_size=1,
+    #                                           geo_weight='none',
+    #                                           connect='flow',
+    #                                           split=True)
+    # gmg.draw_multi_scale_community(community=smc, inline=True, title='sc-infomap-multi-nf-k-p010-y020-split-geo')
+    # gmg.draw_gradient_community(community=community, community_list=[1, 2, 3, 4, 5, 6], inline=True, title='c-infomap-multi-nf-k-p010-y020-split-geo-g5')
+    # gmg.transform(func='kde', generate_nx=False, bandwidth=0.06)
+    # cl, module, link = gmg.community_detection_c(k=True, p=0.1, y=0.15, num_trials=1, silent=False, min_size=5)
+    # gmg.draw_multi_scale_community(community=cl, inline=True, title='c-infomap-single-k-y015-p01-mgeo')
     # gmg.draw_gradient_community(community=cl, num_community=1, inline=True, title='c-infomap-single-k-y015-p01-g1')
     # gmg.draw_multi_scale_community_link(module=module, link=link, inline=True, title='c-infomap-single-k-y015-p01-ml')
-    cll = gmg.community_detection_twice(community=cl,
-                                        method='cinfomap',
-                                        min_size=5,
-                                        self_link_teleportation_probability=0.15,
-                                        teleportation_probability=0.1,
-                                        num_trials=10,
-                                        include_self_links=True,
-                                        out_name='y015p01kTrue')
-    gmg.draw_gradient_community(community=cll, num_community=10, inline=True, title='sc-infomap-single-k-y015-p01-g1')
+    # cll = gmg.community_detection_twice(community=cl,
+    #                                     method='cinfomap',
+    #                                     min_size=5,
+    #                                     self_link_teleportation_probability=0.15,
+    #                                     teleportation_probability=0.1,
+    #                                     num_trials=10,
+    #                                     include_self_links=True,
+    #                                     out_name='y015p01kTrue')
+    # gmg.draw_gradient_community(community=cll, num_community=10, inline=True, title='sc-infomap-single-k-y015-p01-g1')
     # gmg.draw_multi_scale_community(community=cll, cmap=Prism_10, inline=True, title='sc-infomap-single-k-y015-p01-geo')
     # clll = gmg.community_detection_twice(community=cll,
     #                                      method='cinfomap',

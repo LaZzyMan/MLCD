@@ -5,6 +5,7 @@ from shapely.geometry import LineString, Point
 import matplotlib.pyplot as plt
 from pywebplot import *
 from palettable.colorbrewer.diverging import Spectral_10
+from palettable.colorbrewer.sequential import OrRd_9
 from scipy import stats
 import powerlaw
 import infomap
@@ -188,6 +189,90 @@ class GeoMultiGraph:
         print('Finished. %d communities found, %d point unclassified, code length %f.'
               % (num_community, num_unclassify, code_length))
         return community, module, link
+
+    def import_expanded_map_file(self, filename, min_size=1):
+        tag = ''
+        community_table = {
+            'tazid': [],
+            'community': [],
+            'layer': [],
+            'flow': []
+        }
+        module_table = {
+            'community': [],
+            'flow': []
+        }
+        link_table = {
+            'from': [],
+            'to': [],
+            'flow': []
+        }
+        code_length = 0.
+        with open(filename, 'r') as f:
+            for line in f.readlines():
+                if '# codelength' in line:
+                    code_length = float(line.split(' ')[2])
+                    continue
+                if '*Modules' in line:
+                    tag = 'module'
+                    continue
+                if '*Link' in line:
+                    tag = 'link'
+                    continue
+                if '*Node' in line:
+                    tag = 'node'
+                    continue
+                if tag == 'module':
+                    module = line.split(' ')[0]
+                    flow = line.split(' ')[4]
+                    module_table['community'].append(int(module))
+                    module_table['flow'].append(float(flow))
+                if tag == 'link':
+                    link_table['from'].append(int(line.split(' ')[0]))
+                    link_table['to'].append(int(line.split(' ')[1]))
+                    link_table['flow'].append(float(line.split(' ')[2]))
+                if tag == 'node':
+                    node = line.split(' ')[1][1:]
+                    layer = line.split(' ')[3][:-1]
+                    tree = line.split(' ')[0]
+                    flow = float(line.split(' ')[4])
+                    community_table['tazid'].append(self.__get_tazid(int(node)))
+                    community_table['layer'].append(int(layer))
+                    community_table['community'].append(int(tree.split(':')[0]))
+                    community_table['flow'].append(flow)
+            f.close()
+        community = pd.DataFrame.from_dict(community_table)
+        module = pd.DataFrame.from_dict(module_table)
+        link = pd.DataFrame.from_dict(link_table)
+        full_community = []
+        for i in range(self.num_graph):
+            c = community[community['layer'] == i].copy()
+            exist_list = c['tazid'].tolist()
+            un_list = {
+                'tazid': [],
+                'community': [],
+                'layer': [],
+                'flow': []
+            }
+            for taz in self._geo_mapping['tazid']:
+                if taz not in exist_list:
+                    un_list['tazid'].append(taz)
+                    un_list['community'].append(-1)
+                    un_list['layer'].append(i)
+                    un_list['flow'].append(0.)
+            full_community.append(pd.concat([c, pd.DataFrame.from_dict(un_list)], axis=0))
+        community = [self.__simplify_community(c, size=min_size)[0] for c in full_community]
+        community = pd.concat(community, axis=0)
+
+        def norm_flow(x):
+            f_min = community['flow'][(community['community'] == x['community']) & (community['layer'] == x['layer'])].min()
+            f_max = community['flow'][(community['community'] == x['community']) & (community['layer'] == x['layer'])].max()
+            return (x['flow'] - f_min) / (f_max - f_min)
+
+        community['flow_norm'] = community.apply(norm_flow, axis=1)
+        print('Finished. %d communities found, code length %f.'
+              % (community['community'].max(), code_length))
+        return [community[community['layer'] == i].copy() for i in range(self.num_graph)], module, link
 
     def export(self, type, folder, filename, split=True, geo_weight='kde', connect='flow'):
         if type == 'MultiTensor':
@@ -442,7 +527,7 @@ class GeoMultiGraph:
             self._graph = np.array([g.reshape(self.num_nodes, self.num_nodes) for g in expand])
         if func == 'kde':
             kde = self.__kde_weight(**kwargs)
-            self._graph = [graph * (kde + 1.) for graph in self._graph]
+            self._graph = [graph * (1 + kde) for graph in self._graph]
         if generate_nx:
             self.__update_nx_graph()
 
@@ -477,12 +562,14 @@ class GeoMultiGraph:
 
     def generate_tensor(self, geo_weight='queen', connect='flow', **kwargs):
         print('Generating tensor...')
+        # flow = [[1]]
         flow = []
         for i in range(self.num_graph):
             if i == 0:
                 flow.append([])
             else:
                 flow.append([i - 1])
+        # flow.append([self.num_graph - 2])
         all_connect = [list(range(self.num_graph)) for _ in range(self.num_graph)]
         for i in range(self.num_graph):
             all_connect[i].remove(i)
@@ -497,10 +584,7 @@ class GeoMultiGraph:
         for node_0 in range(self.num_nodes):
             for node_1 in range(self.num_nodes):
                 for layer_0 in range(self.num_graph):
-                    if node_0 == node_1:
-                        tensor[node_0][node_1][layer_0][layer_0] = 1.
-                    else:
-                        tensor[node_0][node_1][layer_0][layer_0] = self._graph[layer_0][node_0][node_1]
+                    tensor[node_0][node_1][layer_0][layer_0] = self._graph[layer_0][node_0][node_1]
                     for layer_1 in connect_dict[connect][layer_0]:
                         time_affect = self.__logistic_func(layer_0 - layer_1)
                         tensor[node_0][node_1][layer_0][layer_1] = time_affect * geo_affect[node_0][node_1]
@@ -591,7 +675,7 @@ class GeoMultiGraph:
         df_partition = [self.louvain(g, resolution, min_size) for g in self.nx_graph]
         return df_partition
 
-    def info_map_c(self, in_put, out_put, min_size=1, **kwargs):
+    def info_map_c(self, in_put, out_put, min_size=1, multi_layer=False, **kwargs):
         command = '../../Infomap/Infomap '
         for key, item in kwargs.items():
             if type(item) is bool:
@@ -602,15 +686,12 @@ class GeoMultiGraph:
         command += '%s %s' % (in_put, out_put)
         print(command)
         subprocess.call(command, shell=True)
-        return self.import_map_file(filename='data/' + kwargs['out_name'] + '.map', min_size=min_size)
+        if multi_layer:
+            return self.import_expanded_map_file(filename='data/' + kwargs['out_name'] + '_expanded.map', min_size=min_size)
+        else:
+            return self.import_map_file(filename='data/' + kwargs['out_name'] + '.map', min_size=min_size)
 
-    def community_detection_c(self,
-                              k=True,
-                              p=False,
-                              y=False,
-                              num_trials=False,
-                              silent=True,
-                              min_size=1):
+    def community_detection_c(self, k=True, p=False, y=False, m=False, num_trials=False, silent=True, min_size=1):
         self.export(type='single_infomap', filename='infomap.dat', folder='data')
         result = [self.info_map_c(in_put='data/%s_infomap.dat' % network,
                                   out_put='data',
@@ -620,14 +701,51 @@ class GeoMultiGraph:
                                   zero_based_numbering=True,
                                   include_self_links=k,
                                   map=True,
+                                  two_level=True,
                                   self_link_teleportation_probability=y,
                                   teleportation_probability=p,
+                                  markov_time=m,
                                   num_trials=num_trials,
                                   silent=silent,
                                   min_size=min_size) for network in self._network_list]
         communities = [i[0] for i in result]
         modules = [i[1] for i in result]
         links = [i[2] for i in result]
+        return communities, modules, links
+
+    def community_detection_multi_c(self, k=True, p=False, y=False, m=False, num_trials=False, silent=True, min_size=1,
+                                    split=False, geo_weight='kde', connect='memory', rebuild=True, filename='infomap'):
+        if split:
+            filename = 'split_%s.dat' % filename
+        else:
+            filename = '%s.dat' % filename
+        if rebuild:
+            self.export(type='multi_infomap',
+                        filename=filename,
+                        folder='data',
+                        split=split,
+                        geo_weight=geo_weight,
+                        connect=connect)
+        communities, modules, links = self.info_map_c(in_put='data/' + filename,
+                                                      out_put='data',
+                                                      out_name='y%sp%sk%s_%s' % (str(y), str(p), str(k), filename),
+                                                      input_format='multilayer',
+                                                      directed=True,
+                                                      expanded=True,
+                                                      two_level=True,
+                                                      zero_based_numbering=True,
+                                                      include_self_links=k,
+                                                      # multilayer_relax_rate=0.15,
+                                                      # multilayer_relax_limit=1,
+                                                      map=True,
+                                                      to_nodes=True,
+                                                      self_link_teleportation_probability=y,
+                                                      teleportation_probability=p,
+                                                      markov_time=m,
+                                                      num_trials=num_trials,
+                                                      silent=silent,
+                                                      min_size=min_size,
+                                                      multi_layer=True,)
         return communities, modules, links
 
     def info_map(self, g, min_size=10):
@@ -686,11 +804,6 @@ class GeoMultiGraph:
                             weight = tensor[node_0][node_1][layer_0][layer_1]
                             if not weight == 0:
                                 network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                                # if layer_0 == layer_1:
-                                #     network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
-                                # else:
-                                #     if node_0 == node_1:
-                                #         network.addMultilayerLink(layer_0, node_0, layer_1, node_1, weight)
         else:
             for node_0 in range(self.num_nodes):
                 for node_1 in range(self.num_nodes):
@@ -754,6 +867,47 @@ class GeoMultiGraph:
                 smcs.append(smc)
             cdt.append(pd.concat(smcs, axis=0))
         return cdt
+
+    def community_detection_twice_multi(self, community, k=True, p=False, y=False, m=False, num_trials=False, silent=True, min_size=1, split=False, geo_weight='kde', connect='memory'):
+        cl = merge_layers(community)
+        num_community = [0 for _ in range(self.num_graph)]
+        smcs = []
+        sub_graphs = [self.sub_graph(cl[cl['community'] == m]['tazid'].unique(), network_list=['%s_sub_%d' % (n, m) for n in self._network_list]) for m in cl['community'].unique()]
+        for sub_graph, i in zip(sub_graphs, range(len(sub_graphs))):
+            smc, _, _ = sub_graph.community_detection_multi_c(k=k,
+                                                              p=p,
+                                                              y=y,
+                                                              m=m,
+                                                              num_trials=num_trials,
+                                                              silent=silent,
+                                                              min_size=min_size,
+                                                              split=split,
+                                                              geo_weight=geo_weight,
+                                                              connect=connect,
+                                                              filename='sub_%d' % i)
+            for j in range(self.num_graph):
+                smc[j]['community'] = smc[j]['community'] + num_community[j]
+                num_community[j] += len(smc[j]['community'].unique())
+            smcs.append(smc)
+        return [pd.concat([smc[i] for smc in smcs], axis=0) for i in range(self.num_graph)]
+
+    def draw_tensor(self, geo_weight='kde', connect='flow', cmap=OrRd_9.mpl_colormap):
+        plt.rcParams['figure.figsize'] = (1200, 1200)
+        plt.rcParams['figure.dpi'] = 300
+        tensor = self.generate_tensor(geo_weight=geo_weight, connect=connect)
+        unfolding = np.zeros((self.num_graph * self.num_nodes, self.num_graph * self.num_nodes), dtype=np.float)
+        for layer_0 in range(self.num_graph):
+            for layer_1 in range(self.num_graph):
+                for node_0 in range(self.num_nodes):
+                    for node_1 in range(self.num_nodes):
+                        if layer_0 == layer_1:
+                            continue
+                        else:
+                            unfolding[self.num_nodes * layer_0 + node_0][self.num_nodes * layer_1 + node_1] = tensor[node_0][node_1][layer_0][layer_1]
+        plt.matshow(unfolding, cmap=cmap)
+        plt.savefig('dist/image/%s_%s.png' % (geo_weight, connect))
+        # plt.matshow(self.get_local_relation(geo_weight=geo_weight), cmap=cmap)
+        # plt.savefig('dist/image/%s.png' % geo_weight)
 
     def draw_dist(self, hist=True, kde=True, rug=True, bins=10):
         sns.set_style('ticks')
@@ -834,6 +988,35 @@ class GeoMultiGraph:
         map_view.add_layer(layer)
         map_view.update()
 
+    def draw_extrusion_choropleth_map(self, map_view, data, value='', integer=True, title='Choropleth Map', c_map=Spectral_10.mpl_colormap):
+        timestamp = int(time.time())
+        value_min = data[value].min()
+        value_max = data[value].max()
+        if integer:
+            cmap = IntegerColorMap(value_max - value_min + 1)
+
+            def func(x):
+                return cmap.get_hex_color(int(x[value] + value_min))
+            set_color = func
+        else:
+            def func(x):
+                rgba = c_map((x[value]))
+                return rgb2hex(rgba[0], rgba[1], rgba[2])
+            set_color = func
+        value_geo_map = gpd.GeoDataFrame(data.merge(self._geo_mapping, on='tazid'))
+        value_geo_map = value_geo_map[['tazid', value, 'geometry']]
+        value_geo_map['color'] = value_geo_map.apply(set_color, axis=1)
+        value_geo_map.to_file('dist/data/%s_extrusion.geojson' % (title + str(timestamp)), driver='GeoJSON')
+        source = GeojsonSource(id=value.replace('_', '') + title, data='%s_extrusion.geojson' % (title + str(timestamp)))
+        map_view.add_source(source)
+        layer = FillExtrusionLayer(id=value.replace('_', '') + title,
+                                   source=value.replace('_', '') + title,
+                                   p_fill_extrusion_opacity=0.2,
+                                   p_fill_extrusion_color=['get', 'color'],
+                                   p_fill_extrusion_height=300)
+        map_view.add_layer(layer)
+        map_view.update()
+
     def draw_community_link(self, map_view, module, link, title='ml'):
         timestamp = int(time.time())
         cmap = IntegerColorMap(module['community'].max())
@@ -867,14 +1050,14 @@ class GeoMultiGraph:
         map_view.add_layer(m_layer)
         map_view.update()
 
-    def draw_gradient_community(self, community, column=2, row=3, num_community=-1, inline=False, title='Gradient-Community'):
+    def draw_gradient_community(self, community, column=2, row=3, community_list=None, inline=False, title='Gradient-Community'):
         for c in community:
             c['num_nodes'] = c.apply(lambda x: len(c[c['community'] == x['community']]), axis=1)
             c = c.sort_values(by='num_nodes')
-        if num_community < 0:
-            communities = [[c[c['community'] == i] for i in c['community'].unique()] for c in community]
+        if community_list is None:
+            communities = [[c[c['community'] == i] for i in c['community'].unique()[:5]] for c in community]
         else:
-            communities = [[c[c['community'] == i] for i in c['community'].unique()[:num_community]] for c in community]
+            communities = [[c[c['community'] == i] for i in community_list] for c in community]
         view = PlotView(column_num=row, row_num=column, title=title)
         for subview, i in zip(view, range(self.num_graph)):
             subview.name = self._network_list[i]
@@ -929,7 +1112,7 @@ class GeoMultiGraph:
             self.draw_choropleth_map(map_view=maps[i], data=community[i], value='community', title='%scommunity' % self._network_list[i], c_map=cmap)
         view.plot(inline=inline)
 
-    def draw_network(self, color='white', width=1., value='weight', bk=True, inline=False, row=3, column=2):
+    def draw_network(self, color='white', width=1., value='weight', bk=True, inline=False, row=3, column=2, percent=100):
         view = PlotView(column_num=row, row_num=column, title='Network')
         for subview, i in zip(view, range(self.num_graph)):
             subview.name = self._network_list[i]
@@ -938,9 +1121,9 @@ class GeoMultiGraph:
                        lon=116.37363,
                        lat=39.915606,
                        style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
-                       pitch=55,
+                       pitch=0,
                        bearing=0,
-                       zoom=12,
+                       zoom=10,
                        viewport=view[i]) for i in range(self.num_graph)]
         edge_df = self.edges_geo
         for i in range(self.num_graph):
@@ -950,10 +1133,13 @@ class GeoMultiGraph:
                                      width=width,
                                      value=value,
                                      title='Network-%s' % self._network_list[i],
-                                     bk=bk)
+                                     bk=bk,
+                                     percent=percent)
         view.plot(inline=inline)
 
-    def draw_single_network(self, map_view, data, color='white', width=1., value='weight', title='network', bk=True):
+    def draw_single_network(self, map_view, data, color='white', width=1., value='weight', title='network', bk=True, percent=100):
+        data = data.sort_values(value)
+        data = data[:int(len(data) * percent / 100)].copy()
         timestamp = int(time.time())
         print('Drawing %s...' % title)
         min_weight = data[value].min()
@@ -1019,6 +1205,23 @@ class GeoMultiGraph:
                                        p_fill_extrusion_base=1000 * i)
             map_view.add_layer(layer)
             map_view.update()
+
+    def draw_mix_result(self, sc, mc, title='Mix-result', column=2, row=3, inline=False):
+        view = PlotView(column_num=row, row_num=column, title=title)
+        for subview, i in zip(view, range(self.num_graph)):
+            subview.name = self._network_list[i]
+        maps = [MapBox(name='map_%d' % i,
+                       pk='pk.eyJ1IjoiaGlkZWlubWUiLCJhIjoiY2o4MXB3eWpvNnEzZzJ3cnI4Z3hzZjFzdSJ9.FIWmaUbuuwT2Jl3OcBx1aQ',
+                       lon=116.37363,
+                       lat=39.915606,
+                       style='mapbox://styles/hideinme/cjtgp37qv0kjj1fup07b9lf87',
+                       pitch=30,
+                       bearing=0,
+                       zoom=9,
+                       viewport=view[i]) for i in range(self.num_graph)]
+        for i in range(self.num_graph):
+            self.draw_choropleth_map(map_view=maps[i], data=sc[i], value='community', title='%scommunity' % self._network_list[i])
+        view.plot(inline=inline)
 
     def read_multi_tensor_result(self, filename, vec='u', min_size=10):
         u_file = 'u_' + filename
@@ -1090,13 +1293,14 @@ class GeoMultiGraph:
             else:
                 c_list[line['community']] = [line['tazid']]
         for key, item in c_list.items():
-            if len(item) <= size:
+            if (len(item) <= size) or key == -1:
                 for i in item:
                     un_list.append(i)
             else:
                 r_list.append(item)
+        exist_list = community['tazid'].tolist()
         for taz in self._geo_mapping['tazid']:
-            if taz not in community['tazid'].tolist():
+            if taz not in exist_list:
                 un_list.append(taz)
         table = {
             'tazid': [],
@@ -1124,10 +1328,12 @@ class GeoMultiGraph:
                 table['tazid'].append(i)
                 table['community'].append(len(r_list))
         result = pd.DataFrame.from_dict(table)
-        #
+
         queen = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
         for index, row in result.iterrows():
             neighbor = queen.neighbors[self.__get_index_by_tazid(row['tazid'])]
+            if len(neighbor) == 0:
+                continue
             c_neighbor = [int(result['community'][result['tazid'] == self.__get_tazid(i)]) for i in neighbor]
             if not row['community'] in c_neighbor:
                 result.loc[index, 'community'] = np.argmax(np.bincount(c_neighbor))
@@ -1137,7 +1343,7 @@ class GeoMultiGraph:
 
     def __queen_neighbor_weight(self):
         w = weights.Queen.from_dataframe(self._geo_mapping, geom_col='geometry')
-        td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.int)
+        td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
         for i in range(self.num_nodes):
             td[i][i] = 1.
         for i in range(self.num_nodes):
@@ -1165,7 +1371,7 @@ class GeoMultiGraph:
                             break
         return td
 
-    def __knn_weight(self, k=6):
+    def __knn_weight(self, k=10):
         w = weights.KNN.from_dataframe(self._geo_mapping, geom_col='geometry', k=k)
         td = np.zeros([self._num_nodes, self._num_nodes], dtype=np.float)
         for i in range(self.num_nodes):
@@ -1191,7 +1397,8 @@ class GeoMultiGraph:
 
     @staticmethod
     def __logistic_func(x):
-        return 1. - (1./(1. + pow(np.e, -1 * abs(x))))
+        # return 1. - (1./(1. + pow(np.e, -1 * abs(x))))
+        return (1. - (1./(1. + pow(np.e, -1 * abs(x))))) * 0.02
 
 
 if __name__ == '__main__':

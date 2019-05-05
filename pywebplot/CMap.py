@@ -36,22 +36,16 @@ class IntegerColorMap(object):
         colors = []
         for c_map in QUALITATIVE:
             colors.extend(c_map.colors)
-        colors.extend(colors)
+        # colors.extend(colors)
+        for _ in range(int(n / len(colors))):
+            colors.extend(colors)
         self._c_map = colors
         self._num_colors = len(colors)
-        if n > len(colors) * 2:
-            raise AttributeError('No enough colors.')
-        self._c_map = colors
-        self._num_colors = n
 
     def get_rgb_color(self, n):
-        if n > self._num_colors:
-            raise IndexError('%d out of range.' % n)
         return self._c_map[n]
 
     def get_hex_color(self, n):
-        if n > self._num_colors:
-            raise IndexError('%d out of range.' % n)
         return rgb2hex(self._c_map[n][0], self._c_map[n][1], self._c_map[n][2])
 
 
